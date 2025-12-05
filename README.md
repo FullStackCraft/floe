@@ -6,6 +6,10 @@ Browser-only TypeScript functions for calculating Black-Scholes, Greeks, and dea
 
 The same library that is used in Full Stack Craft's various fintech products including [The Wheel Screener](https://wheelscreener.com), [LEAPS Screener](https://leapsscreener.com), [Option Screener](https://option-screener.com), [AMT JOY](https://amtjoy.com), and [VannaCharm](https://vannacharm.com).
 
+## Quick Start / Documentation / Examples
+
+[fullstackcraft.github.io/floe](https://fullstackcraft.github.io/floe)
+
 ## 📋 Dual License
 
 **This project is dual-licensed:**
@@ -32,10 +36,6 @@ The same library that is used in Full Stack Craft's various fintech products inc
 npm install @fullstackcraftllc/floe
 ```
 
-## Quick Start - Example / Documentation Site
-
-The website at [fullstackcraft.github.io/floe](https://fullstackcraft.github.io/floe) contains full documentation, a playground, and live code examples and documentation and is here locally at `./site`. It is a static site build with Next.js.
-
 ## License
 
 **Free for Individuals** - Use the MIT License for personal, educational, and non-commercial projects.
@@ -49,10 +49,6 @@ See [LICENSE.md](LICENSE.md) for full details.
 ## Pricing
 
 [Contact hi@fullstackcraft.com for pricing](mailto:hi@fullstackcraft.com)
-
-## Documentation
-
-Full documentation coming soon at [fullstackcraft.github.io/floe](https://fullstackcraft.github.io/floe)
 
 ## Contributing
 
