@@ -1,0 +1,55 @@
+{
+  "name": "@fullstackcraftllc/floe",
+  "version": "0.0.1",
+  "description": "Production-ready options analytics toolkit. Normalize broker data structures and calculate Black-Scholes, Greeks, and GEX with a clean, type-safe API. Built for trading platforms and fintech applications.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "prepublishOnly": "npm run build",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "options",
+    "black-scholes",
+    "greeks",
+    "gamma",
+    "delta",
+    "vanna",
+    "charm",
+    "dealer-exposure",
+    "gex",
+    "trading",
+    "finance",
+    "typescript"
+  ],
+  "author": {
+    "name": "Full Stack Craft LLC",
+    "email": "hi@fullstackcraft.com",
+    "url": "https://fullstackcraft.com"
+  },
+  "license": "SEE LICENSE IN LICENSE.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FullStackCraft/floe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FullStackCraft/floe/issues"
+  },
+  "homepage": "https://github.com/FullStackCraft/floe#readme",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md",
+    "LICENSE-MIT",
+    "LICENSE-COMMERCIAL"
+  ]
+}

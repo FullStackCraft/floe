@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+@theme {
+  --color-off-white: #FAFAFA;
+  --color-warm-white: #F8F8F8;
+  --font-family-mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+}
+
+/* Prism.js theme - clean minimal style */
+code[class*="language-"],
+pre[class*="language-"] {
+  color: #1a1a1a;
+  background: none;
+  font-family: var(--font-family-mono);
+  font-size: 0.875rem;
+  text-align: left;
+  white-space: pre;
+  word-spacing: normal;
+  word-break: normal;
+  word-wrap: normal;
+  line-height: 1.6;
+  tab-size: 2;
+  hyphens: none;
+}
+
+pre[class*="language-"] {
+  padding: 1.5rem;
+  margin: 1rem 0;
+  overflow: auto;
+  border-radius: 0.5rem;
+  background: #f8f8f8;
+  border: 1px solid #e5e5e5;
+}
+
+:not(pre) > code[class*="language-"] {
+  padding: 0.2em 0.4em;
+  border-radius: 0.25rem;
+  background: #f4f4f4;
+}
+
+/* Syntax highlighting tokens */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: #6a737d;
+  font-style: italic;
+}
+
+.token.punctuation {
+  color: #1a1a1a;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted {
+  color: #0550ae;
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted {
+  color: #116329;
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+  color: #cf222e;
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  color: #cf222e;
+}
+
+.token.function,
+.token.class-name {
+  color: #8250df;
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+  color: #953800;
+}
+
+/* Prose styling for markdown content */
+.prose h2 {
+  font-family: var(--font-family-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  color: #1a1a1a;
+}
+
+.prose h3 {
+  font-family: var(--font-family-mono);
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #1a1a1a;
+}
+
+.prose p {
+  margin-bottom: 1rem;
+  line-height: 1.75;
+  color: #374151;
+}
+
+.prose ul, .prose ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+.prose li {
+  margin-bottom: 0.5rem;
+  line-height: 1.75;
+  color: #374151;
+}
+
+.prose code:not(pre code) {
+  background: #f4f4f4;
+  padding: 0.2em 0.4em;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-family: var(--font-family-mono);
+}
+
+.prose a {
+  color: #1a1a1a;
+  text-decoration: underline;
+}
+
+.prose a:hover {
+  color: #4b5563;
+}
+
+.prose strong {
+  font-weight: 600;
+  color: #1a1a1a;
+}
