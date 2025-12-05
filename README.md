@@ -4,7 +4,7 @@
 
 Browser-only TypeScript functions for calculating Black-Scholes, Greeks, and dealer exposures with a clean, type-safe API. Built for use in trading platforms and fintech applications.
 
-The same library that is used in Full Stack Craft's various fintech products including [The Wheel Screener](https://wheelscreener.com), [LEAPS Screener](https://leapsscreener.com), [Option Screener](https://option-screener.com),  [AMT JOY](https://amtjoy.com), and [VannaCharm](https://vannacharm.com).
+The same library that is used in Full Stack Craft's various fintech products including [The Wheel Screener](https://wheelscreener.com), [LEAPS Screener](https://leapsscreener.com), [Option Screener](https://option-screener.com), [AMT JOY](https://amtjoy.com), and [VannaCharm](https://vannacharm.com).
 
 ## 📋 Dual License
 
@@ -32,170 +32,9 @@ The same library that is used in Full Stack Craft's various fintech products inc
 npm install @fullstackcraftllc/floe
 ```
 
-## Quick Start
+## Quick Start - Example / Documentation Site
 
-Nearly everything in `floe` revolves around the `NormalizedOption` interface, which provides a consistent way to represent options data regardless of the broker source:
-
-```typescript
-/**
- * Normalized option data structure (broker-agnostic)
- */
-export interface NormalizedOption {
-  /** Underlying symbol */
-  symbol: string;
-  /** Strike price */
-  strike: number;
-  /** Expiration date (ISO 8601) */
-  expiration: string;
-  /** Option type */
-  optionType: OptionType;
-  /** Current bid price */
-  bid: number;
-  /** Current ask price */
-  ask: number;
-  /** Last traded price */
-  last: number;
-  /** Trading volume */
-  volume: number;
-  /** Open interest */
-  openInterest: number;
-  /** Implied volatility (as decimal) */
-  impliedVolatility: number;
-  /** Pre-calculated Greeks (optional) */
-  greeks?: Greeks;
-}
-```
-
-```typescript
-import { blackScholes, calculateGreeks, calculateGEX } from '@fullstackcraftllc/floe';
-
-// Calculate option price
-const price = blackScholes({
-  spot: 100,
-  strike: 105,
-  timeToExpiry: 0.25,
-  volatility: 0.20,
-  riskFreeRate: 0.05,
-  optionType: 'call'
-});
-
-// Calculate Greeks
-const greeks = calculateGreeks({
-  spot: 100,
-  strike: 105,
-  timeToExpiry: 0.25,
-  volatility: 0.20,
-  riskFreeRate: 0.05,
-  optionType: 'call'
-});
-
-const normalizedOptions = [
-  {
-    symbol: 'AAPL',
-    strike: 105,
-    expiration: '2025-12-20',
-    optionType: 'call',
-    bid: 2.50,
-    ask: 2.60,
-    last: 2.55,
-    volume: 150,
-    openInterest: 2000,
-    impliedVolatility: 0.22
-  },
-  // ...more options
-];
-
-const gexData = calculateGEX(normalizedOptions, 100, 100);
-
-console.log('Option Price:', price);
-console.log('Delta:', greeks.delta);
-console.log('Gamma:', greeks.gamma);
-console.log('Net Gamma:', gexData.netGamma);
-console.log('Strike of Max Gamma:', gexData.maxPositiveStrike);
-console.log('Strike of Min Gamma:', gexData.maxNegativeStrike);
-console.log('Zero Gamma Level:', gexData.zeroGammaLevel);
-```
-
-## Broker Normalization
-
-Floe provides adapters for normalizing options data from multiple brokers:
-
-```typescript
-import { normalizeTastyworksData } from '@fullstackcraftllc/floe';
-
-// Tastyworks data
-const normalizedOptions = normalizeTastyworksData(rawTastyData);
-
-// Now both use the same interface
-normalizedOptions.forEach(option => {
-  const greeks = calculateGreeks(option);
-  console.log(greeks);
-});
-```
-
-## For Devs - Example / Documentation Site
-
-The website at [fullstackcraft.github.io/floe](https://fullstackcraft.github.io/floe) contains live code examples and documentation and is here locally at `./site`. It is a static site build with Next.js.
-
-## API Documentation
-
-### Black-Scholes Pricing
-
-```typescript
-blackScholes(params: BlackScholesParams): number
-```
-
-Calculate option price using Black-Scholes model.
-
-**Parameters:**
-- `spot`: Current price of underlying asset
-- `strike`: Strike price of option
-- `timeToExpiry`: Time to expiration in years
-- `volatility`: Implied volatility (annualized)
-- `riskFreeRate`: Risk-free interest rate (annualized)
-- `optionType`: 'call' | 'put'
-- `dividendYield?`: Dividend yield (optional, default 0)
-
-### Greeks Calculation
-
-```typescript
-calculateGreeks(params: BlackScholesParams): Greeks
-```
-
-Calculate all Greeks for an option.
-
-**Returns:**
-- `delta`: Rate of change of option price with respect to underlying price
-- `gamma`: Rate of change of delta with respect to underlying price
-- `theta`: Rate of change of option price with respect to time
-- `vega`: Rate of change of option price with respect to volatility
-- `rho`: Rate of change of option price with respect to interest rate
-
-### Estimate Implied Volatility Surface
-
-```typescript
-estimateIVSurface(options: NormalizedOption[], spot: number): IVSurface
-```
-
-### Dealer Exposure Metrics
-
-```typescript
-calculateGEX(options: NormalizedOption[]): GEXMetrics
-calculateVanna(options: NormalizedOption[]): VannaMetrics
-calculateCharm(options: NormalizedOption[]): CharmMetrics
-```
-
-### Notional Intraday Dealer Exposure Metrics
-
-This process assume that dealer inventory consists of the previously reported open interest at t=0 (09:30AM EST), and that all options volume is bought or sold at market price based on the NBBO at the time of the trade. This is a simplification and may not reflect actual dealer inventory changes throughout the day.
-
-Note that the nature of this calculation requires continuous intraday data including time-stamped trades and quotes to accurately model dealer inventory changes.
-
-```typescript
-calculateIntradayGEX(trades: Trade[], quotes: Quote[], initialOpenInterest: Map<string, number>, spotPrices: Map<string, number>): IntradayGEXMetrics
-```
-
-Calculate dealer exposure metrics across an options chain.
+The website at [fullstackcraft.github.io/floe](https://fullstackcraft.github.io/floe) contains full documentation, a playground, and live code examples and documentation and is here locally at `./site`. It is a static site build with Next.js.
 
 ## License
 
@@ -209,45 +48,11 @@ See [LICENSE.md](LICENSE.md) for full details.
 
 ## Pricing
 
-### Individual (MIT License)
-**$0/month** - Free forever
-- ✅ Personal projects
-- ✅ Open-source projects
-- ✅ Educational use
-- ✅ Community support
-
-### Developer (Commercial)
-**$149/month** or **$1,490/year**
-- ✅ Commercial use
-- ✅ Up to 100K calculations/month
-- ✅ Email support
-- ✅ All broker integrations
-
-### Professional (Commercial)
-**$499/month** or **$4,990/year**
-- ✅ Unlimited calculations
-- ✅ Priority support
-- ✅ SLA guarantees
-- ✅ Custom integrations
-
-### Enterprise (Commercial)
-**Custom pricing**
-- ✅ White-label options
-- ✅ Dedicated support
-- ✅ On-premise deployment
-- ✅ Custom broker adapters
-
-[Contact hi@fullstackcraft.com for Enterprise pricing](mailto:hi@fullstackcraft.com)
+[Contact hi@fullstackcraft.com for pricing](mailto:hi@fullstackcraft.com)
 
 ## Documentation
 
 Full documentation coming soon at [fullstackcraft.github.io/floe](https://fullstackcraft.github.io/floe)
-
-## Support
-
-- **Email:** hi@fullstackcraft.com
-- **Bug Reports:** [GitHub Issues](https://github.com/FullStackCraft/floe/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/FullStackCraft/floe/discussions)
 
 ## Contributing
 
@@ -255,15 +60,12 @@ Contributions welcome! Please open an issue or PR.
 
 By contributing, you agree that your contributions will be licensed under the same dual-license terms.
 
-## Roadmap
+## TODOs
 
-- [ ] Homepage / documentation site
-- [ ] Volatility surface estimation with a variety of interpolation methods
 - [ ] Implied PDF calculations
 - [ ] Tradier integration, normalization, and docs
 - [ ] TradeStation integration, normalization, and docs
 - [ ] Interactive Brokers integration, normalization, and docs
-
 
 ## Credits
 
