@@ -21,7 +21,7 @@ export default function Home() {
           floe
         </h1>
         <p className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
-          Browser-only TypeScript functions for calculating Black-Scholes, Greeks, and dealer exposures with a clean, type-safe API.
+          Zero-dependency TypeScript functions for options flow: Black-Scholes, Greeks, and dealer exposures, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.
         </p>
       </div>
 

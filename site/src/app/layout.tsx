@@ -3,7 +3,7 @@ import "@/styles/globals.css";
 
 export const metadata: Metadata = {
   title: "floe - TypeScript Options Analytics Library",
-  description: "Browser-only TypeScript functions for calculating Black-Scholes, Greeks, and dealer exposures with a clean, type-safe API.",
+  description: "Zero-dependency TypeScript functions for options flow: Black-Scholes, Greeks, and dealer exposures, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.",
 };
 
 export default function RootLayout({
