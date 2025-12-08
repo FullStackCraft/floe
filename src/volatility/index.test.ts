@@ -10,17 +10,22 @@ function createOption(
   openInterest: number = 1000
 ): NormalizedOption {
   return {
+    occSymbol: `TEST${new Date(expirationTimestamp).toISOString().slice(2, 10).replace(/-/g, '')}${optionType === 'call' ? 'C' : 'P'}${String(strike * 1000).padStart(8, '0')}`,
+    underlying: 'TEST',
     strike,
     expiration: new Date(expirationTimestamp).toISOString(),
     expirationTimestamp,
     optionType,
     bid: mark - 0.05,
+    bidSize: 10,
     ask: mark + 0.05,
+    askSize: 10,
     mark,
     last: mark,
     volume: 100,
     openInterest,
     impliedVolatility: 0.20,
+    timestamp: Date.now(),
   };
 }
 

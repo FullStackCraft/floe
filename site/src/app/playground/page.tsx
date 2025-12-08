@@ -1,13 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  Sandpack,
-  SandpackProvider,
-  SandpackLayout,
-  SandpackCodeEditor,
-  SandpackConsole,
-} from "@codesandbox/sandpack-react";
+import { Sandpack } from "@codesandbox/sandpack-react";
 import { useState } from "react";
 
 const EXAMPLES = {

@@ -1,7 +1,7 @@
 {
   "name": "@fullstackcraftllc/floe",
-  "version": "0.0.1",
-  "description": "Production-ready options analytics toolkit. Normalize broker data structures and calculate Black-Scholes, Greeks, and GEX with a clean, type-safe API. Built for trading platforms and fintech applications.",
+  "version": "0.0.2",
+  "description": "Production-ready options analytics toolkit. Normalize broker data structures and calculate Black-Scholes, Greeks, and exposures with a clean, type-safe API. Built for trading platforms and fintech applications.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

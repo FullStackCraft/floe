@@ -70,9 +70,37 @@ export interface Greeks {
 }
 
 /**
+ * Normalized ticker data structure (broker-agnostic)
+ */
+export interface NormalizedTicker {
+  /** Underlying symbol */
+  symbol: string;
+  /** Current spot price of the underlying (mid of bid/ask, or last trade) */
+  spot: number;
+  /** Current bid price */
+  bid: number;
+  /** Current bid size */
+  bidSize: number;
+  /** Current ask price */
+  ask: number;
+  /** Current ask size */
+  askSize: number;
+  /** Last traded price */
+  last: number;
+  /** Cumulative volume for the day */
+  volume: number;
+  /** Timestamp of the quote in milliseconds */
+  timestamp: number;
+}
+
+/**
  * Normalized option data structure (broker-agnostic)
  */
 export interface NormalizedOption {
+  /** OCC-formatted option symbol (e.g., 'AAPL  230120C00150000') */
+  occSymbol: string;
+  /** Underlying ticker symbol */
+  underlying: string;
   /** Strike price */
   strike: number;
   /** Expiration date (ISO 8601) */
@@ -83,8 +111,12 @@ export interface NormalizedOption {
   optionType: OptionType;
   /** Current bid price */
   bid: number;
+  /** Current bid size */
+  bidSize: number;
   /** Current ask price */
   ask: number;
+  /** Current ask size */
+  askSize: number;
   /** Mark (mid) price */
   mark: number;
   /** Last traded price */
@@ -93,8 +125,12 @@ export interface NormalizedOption {
   volume: number;
   /** Open interest */
   openInterest: number;
+  /** Live open interest - calculated intraday by comparing using open interest as t=0 and comparing trades to the current NBBO for that option */
+  liveOpenInterest?: number;
   /** Implied volatility (as decimal) */
   impliedVolatility: number;
+  /** Timestamp of the quote in milliseconds */
+  timestamp: number;
   /** Pre-calculated Greeks (optional) */
   greeks?: Greeks;
 }

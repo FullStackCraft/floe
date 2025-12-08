@@ -40,6 +40,24 @@ export {
   normalPDF,
 } from './utils/statistics';
 
+// OCC symbol utilities
+export {
+  buildOCCSymbol,
+  parseOCCSymbol,
+  generateStrikesAroundSpot,
+  generateOCCSymbolsForStrikes,
+  generateOCCSymbolsAroundSpot,
+} from './utils/occ';
+export type {
+  OCCSymbolParams,
+  ParsedOCCSymbol,
+  StrikeGenerationParams,
+} from './utils/occ';
+
+// Client
+export { FloeClient, Broker } from './client/FloeClient';
+export { TradierClient } from './client/brokers/TradierClient';
+
 // Broker adapters
 export {
   genericAdapter,

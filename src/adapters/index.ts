@@ -1,22 +1,44 @@
 import { RawOptionData, NormalizedOption, OptionChain, BrokerAdapter } from '../types';
+import { buildOCCSymbol } from '../utils/occ';
+
+/**
+ * Helper to build OCC symbol from raw data
+ */
+function buildOCCFromRaw(underlying: string, expiration: string | Date, optionType: 'call' | 'put', strike: number): string {
+  try {
+    return buildOCCSymbol({ symbol: underlying, expiration, optionType, strike });
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Generic adapter that maps common field names
  * This is a fallback adapter when broker-specific adapters are not available
  */
 export const genericAdapter: BrokerAdapter = (data: RawOptionData): NormalizedOption => {
+  const underlying = String(data.underlying || data.symbol || data.underlyingSymbol || '');
+  const expiration = data.expiration || data.expirationDate || '';
+  const optionType = (data.optionType || data.putCall || '').toLowerCase() === 'call' ? 'call' as const : 'put' as const;
+  const strike = Number(data.strike || data.strikePrice || 0);
+  
   return {
-    strike: Number(data.strike || data.strikePrice || 0),
-    expiration: data.expiration || data.expirationDate || '',
-    expirationTimestamp: data.expirationTimestamp || new Date(data.expiration || data.expirationDate).getTime(),
-    optionType: (data.optionType || data.putCall || '').toLowerCase() === 'call' ? 'call' : 'put',
+    occSymbol: data.occSymbol || data.symbol || buildOCCFromRaw(underlying, expiration, optionType, strike),
+    underlying,
+    strike,
+    expiration,
+    expirationTimestamp: data.expirationTimestamp || new Date(expiration).getTime(),
+    optionType,
     bid: Number(data.bid || 0),
+    bidSize: Number(data.bidSize || data.bidQty || 0),
     ask: Number(data.ask || 0),
+    askSize: Number(data.askSize || data.askQty || 0),
     mark: Number(data.mark || (data.bid + data.ask) / 2 || 0),
     last: Number(data.last || data.lastPrice || 0),
     volume: Number(data.volume || 0),
     openInterest: Number(data.openInterest || 0),
     impliedVolatility: Number(data.impliedVolatility || data.iv || 0),
+    timestamp: Number(data.timestamp || Date.now()),
   };
 };
 
@@ -24,18 +46,28 @@ export const genericAdapter: BrokerAdapter = (data: RawOptionData): NormalizedOp
  * Schwab-specific adapter for Schwab API responses
  */
 export const schwabAdapter: BrokerAdapter = (data: RawOptionData): NormalizedOption => {
+  const underlying = String(data.underlying || data.underlyingSymbol || '');
+  const expiration = data.expirationDate || '';
+  const optionType = (data.putCall || '').toLowerCase() === 'call' ? 'call' as const : 'put' as const;
+  const strike = Number(data.strikePrice || 0);
+  
   return {
-    strike: Number(data.strikePrice || 0),
-    expiration: data.expirationDate || '',
-    expirationTimestamp: new Date(data.expirationDate).getTime(),
-    optionType: (data.putCall || '').toLowerCase() === 'call' ? 'call' : 'put',
+    occSymbol: data.symbol || buildOCCFromRaw(underlying, expiration, optionType, strike),
+    underlying,
+    strike,
+    expiration,
+    expirationTimestamp: new Date(expiration).getTime(),
+    optionType,
     bid: Number(data.bid || 0),
+    bidSize: Number(data.bidSize || 0),
     ask: Number(data.ask || 0),
+    askSize: Number(data.askSize || 0),
     mark: Number(data.mark || 0),
     last: Number(data.last || 0),
     volume: Number(data.totalVolume || 0),
     openInterest: Number(data.openInterest || 0),
     impliedVolatility: Number(data.volatility || 0),
+    timestamp: Number(data.quoteTime || Date.now()),
   };
 };
 
@@ -43,18 +75,28 @@ export const schwabAdapter: BrokerAdapter = (data: RawOptionData): NormalizedOpt
  * Interactive Brokers adapter
  */
 export const ibkrAdapter: BrokerAdapter = (data: RawOptionData): NormalizedOption => {
+  const underlying = String(data.underlying || data.symbol || '');
+  const expiration = data.lastTradeDateOrContractMonth || '';
+  const optionType = (data.right || '').toLowerCase() === 'c' ? 'call' as const : 'put' as const;
+  const strike = Number(data.strike || 0);
+  
   return {
-    strike: Number(data.strike || 0),
-    expiration: data.lastTradeDateOrContractMonth || '',
-    expirationTimestamp: new Date(data.lastTradeDateOrContractMonth).getTime(),
-    optionType: (data.right || '').toLowerCase() === 'c' ? 'call' : 'put',
+    occSymbol: data.localSymbol || buildOCCFromRaw(underlying, expiration, optionType, strike),
+    underlying,
+    strike,
+    expiration,
+    expirationTimestamp: new Date(expiration).getTime(),
+    optionType,
     bid: Number(data.bid || 0),
+    bidSize: Number(data.bidSize || 0),
     ask: Number(data.ask || 0),
+    askSize: Number(data.askSize || 0),
     mark: Number(data.mark || (data.bid + data.ask) / 2 || 0),
     last: Number(data.lastTradedPrice || 0),
     volume: Number(data.volume || 0),
     openInterest: Number(data.openInterest || 0),
     impliedVolatility: Number(data.impliedVolatility || 0),
+    timestamp: Number(data.time || Date.now()),
   };
 };
 
@@ -62,18 +104,28 @@ export const ibkrAdapter: BrokerAdapter = (data: RawOptionData): NormalizedOptio
  * TD Ameritrade / Schwab TDA API adapter
  */
 export const tdaAdapter: BrokerAdapter = (data: RawOptionData): NormalizedOption => {
+  const underlying = String(data.underlying || data.underlyingSymbol || '');
+  const expiration = data.expirationDate || '';
+  const optionType = (data.putCall || '').toLowerCase() === 'call' ? 'call' as const : 'put' as const;
+  const strike = Number(data.strikePrice || 0);
+  
   return {
-    strike: Number(data.strikePrice || 0),
-    expiration: data.expirationDate || '',
-    expirationTimestamp: data.expirationDate ? new Date(data.expirationDate).getTime() : 0,
-    optionType: (data.putCall || '').toLowerCase() === 'call' ? 'call' : 'put',
+    occSymbol: data.symbol || buildOCCFromRaw(underlying, expiration, optionType, strike),
+    underlying,
+    strike,
+    expiration,
+    expirationTimestamp: expiration ? new Date(expiration).getTime() : 0,
+    optionType,
     bid: Number(data.bid || 0),
+    bidSize: Number(data.bidSize || 0),
     ask: Number(data.ask || 0),
+    askSize: Number(data.askSize || 0),
     mark: Number(data.mark || 0),
     last: Number(data.last || 0),
     volume: Number(data.totalVolume || 0),
     openInterest: Number(data.openInterest || 0),
     impliedVolatility: Number(data.volatility || 0),
+    timestamp: Number(data.quoteTimeInLong || Date.now()),
   };
 };
 
