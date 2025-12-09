@@ -189,3 +189,101 @@ console.log(exposures);
 //   ...
 // ]
 ```
+
+## Implied PDF
+
+Estimate the market-implied probability distribution from option prices using Breeden-Litzenberger numerical differentiation.
+
+### estimateImpliedProbabilityDistribution
+
+Estimate the implied PDF for a single expiration from call option prices:
+
+```typescript
+import { 
+  estimateImpliedProbabilityDistribution,
+  NormalizedOption 
+} from "@fullstackcraftllc/floe";
+
+// Call options for a single expiry
+const callOptions: NormalizedOption[] = [
+  { strike: 495, bid: 11.50, ask: 11.70, optionType: "call", /* ... */ },
+  { strike: 500, bid: 8.30, ask: 8.50, optionType: "call", /* ... */ },
+  { strike: 505, bid: 5.60, ask: 5.80, optionType: "call", /* ... */ },
+  // ... more strikes (need at least 3)
+];
+
+const result = estimateImpliedProbabilityDistribution(
+  "QQQ",           // symbol
+  502.50,          // current spot price
+  callOptions      // call options for single expiry
+);
+
+if (result.success) {
+  console.log(result.distribution);
+  // {
+  //   symbol: "QQQ",
+  //   expiryDate: 1702598400000,
+  //   calculationTimestamp: 1702512000000,
+  //   underlyingPrice: 502.50,
+  //   mostLikelyPrice: 505,
+  //   medianPrice: 503,
+  //   expectedValue: 502.8,
+  //   expectedMove: 8.5,
+  //   tailSkew: 1.05,
+  //   cumulativeProbabilityAboveSpot: 0.52,
+  //   cumulativeProbabilityBelowSpot: 0.48,
+  //   strikeProbabilities: [
+  //     { strike: 495, probability: 0.08 },
+  //     { strike: 500, probability: 0.22 },
+  //     { strike: 505, probability: 0.28 },
+  //     ...
+  //   ]
+  // }
+}
+```
+
+### estimateImpliedProbabilityDistributions
+
+Process all expirations in a chain at once:
+
+```typescript
+import { estimateImpliedProbabilityDistributions } from "@fullstackcraftllc/floe";
+
+const distributions = estimateImpliedProbabilityDistributions(
+  "QQQ",           // symbol
+  502.50,          // spot price
+  chain.options    // all options (calls and puts, all expirations)
+);
+
+// Returns array of ImpliedProbabilityDistribution for each expiration
+for (const dist of distributions) {
+  console.log(`Expiry: ${new Date(dist.expiryDate).toDateString()}`);
+  console.log(`  Mode: ${dist.mostLikelyPrice}`);
+  console.log(`  Expected Move: ±${dist.expectedMove.toFixed(2)}`);
+}
+```
+
+### Utility Functions
+
+```typescript
+import {
+  getProbabilityInRange,
+  getCumulativeProbability,
+  getQuantile
+} from "@fullstackcraftllc/floe";
+
+// Probability of finishing between two strikes
+const prob = getProbabilityInRange(distribution, 495, 510);
+// 0.65 (65% chance of finishing between $495 and $510)
+
+// Cumulative probability up to a price
+const cumProb = getCumulativeProbability(distribution, 500);
+// 0.35 (35% chance of finishing at or below $500)
+
+// Find the strike at a given probability quantile
+const p10 = getQuantile(distribution, 0.10);  // 10th percentile strike
+const p90 = getQuantile(distribution, 0.90);  // 90th percentile strike
+// Use for iron condor strike selection, confidence intervals, etc.
+```
+
+

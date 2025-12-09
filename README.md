@@ -30,6 +30,28 @@ The same library that is used in Full Stack Craft's various fintech products inc
 - 💪 **Type-Safe** - Full TypeScript support
 - ⚡ **Zero Dependencies** - Lightweight and fast
 
+## Broker Support Roadmap
+
+Due to the overwhelming variety of how broker APIs structure their data (and how they make it available), there is a wide variety of how much support we can provide out-of-the-box for different brokers, summarized in this table:
+
+| Broker                | Black-Scholes | Greeks | Open Interest Based Exposures | Options-Book Based Exposures | Implied PDF Calculations |
+|-----------------------|--------------|--------|-------------------------------|------------------------------|-------------------------|
+| Tradier (via WebSocket) | ✅           | ✅     | ✅                            | ✅                           | Coming soon                        |
+| Schwab (via WebSocket)              | Coming soon           | Coming soon     | Coming soon                            | Coming soon                           | Coming soon                        |
+| Tastytrade (via WebSocket - DXLink Streamer)               | Coming soon           | Coming soon     | Coming soon                            | Coming soon                           | Coming soon                        |
+| TradeStation (via HTTP Streaming)              | Coming soon           | Coming soon     | Coming soon                            | Coming soon                           | Coming soon                        |
+
+Ideally all aspects of `floe` will be available for all brokers, but this will take time to determine as we work through the various data structures and formats that each broker provides.
+
+## Unsupported Brokers
+
+The following brokers have no public API:
+
+- Fidelity
+- Robinhood
+
+If your broker is not listed above, you can still use `floe` by normalizing your broker's data structures to match the expected input types. With options, you can get quite far with `floe` just by having the market price for the underlying and each option. (From those alone you can back out the IV, greeks, and exposures.)
+
 ## Installation
 
 ```bash

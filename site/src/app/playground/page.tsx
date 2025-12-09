@@ -218,6 +218,80 @@ console.log("Repriced Value:", repricedValue.toFixed(4));
 console.log("Difference:", Math.abs(marketPrice - repricedValue).toFixed(6));
 `,
   },
+  "implied-pdf": {
+    title: "Implied PDF",
+    description: "Extract market-implied probability distributions from option prices",
+    code: `import {
+  estimateImpliedProbabilityDistribution,
+  getProbabilityInRange,
+  getQuantile,
+  NormalizedOption,
+} from "@fullstackcraftllc/floe";
+
+// Sample call options for a single expiration
+// In practice, these come from your broker API
+const expirationTimestamp = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days out
+
+const callOptions: NormalizedOption[] = [
+  { strike: 490, bid: 15.20, ask: 15.50, mark: 15.35, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 15.35, volume: 100, openInterest: 1000, impliedVolatility: 0.20, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 495, bid: 11.40, ask: 11.70, mark: 11.55, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 11.55, volume: 100, openInterest: 1000, impliedVolatility: 0.19, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 500, bid: 8.10, ask: 8.40, mark: 8.25, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 8.25, volume: 100, openInterest: 1000, impliedVolatility: 0.18, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 505, bid: 5.30, ask: 5.60, mark: 5.45, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 5.45, volume: 100, openInterest: 1000, impliedVolatility: 0.17, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 510, bid: 3.10, ask: 3.40, mark: 3.25, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 3.25, volume: 100, openInterest: 1000, impliedVolatility: 0.16, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 515, bid: 1.60, ask: 1.90, mark: 1.75, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 1.75, volume: 100, openInterest: 1000, impliedVolatility: 0.15, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 520, bid: 0.70, ask: 0.95, mark: 0.83, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 0.83, volume: 100, openInterest: 1000, impliedVolatility: 0.14, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+];
+
+const spot = 502.50;
+
+// Estimate the implied probability distribution
+const result = estimateImpliedProbabilityDistribution("QQQ", spot, callOptions);
+
+if (result.success) {
+  const dist = result.distribution;
+  
+  console.log("=== Implied Probability Distribution ===");
+  console.log("Symbol:", dist.symbol);
+  console.log("Spot Price: $" + dist.underlyingPrice);
+  console.log("");
+  
+  console.log("=== Summary Statistics ===");
+  console.log("Most Likely Price (Mode): $" + dist.mostLikelyPrice);
+  console.log("Median Price: $" + dist.medianPrice);
+  console.log("Expected Value: $" + dist.expectedValue.toFixed(2));
+  console.log("Expected Move: ±$" + dist.expectedMove.toFixed(2));
+  console.log("Tail Skew:", dist.tailSkew.toFixed(3));
+  console.log("");
+  
+  console.log("=== Directional Probabilities ===");
+  console.log("P(above spot): " + (dist.cumulativeProbabilityAboveSpot * 100).toFixed(1) + "%");
+  console.log("P(below spot): " + (dist.cumulativeProbabilityBelowSpot * 100).toFixed(1) + "%");
+  console.log("");
+  
+  // Range probability
+  const rangeProb = getProbabilityInRange(dist, 495, 510);
+  console.log("P($495 ≤ price ≤ $510): " + (rangeProb * 100).toFixed(1) + "%");
+  
+  // Confidence intervals using quantiles
+  const p10 = getQuantile(dist, 0.10);
+  const p90 = getQuantile(dist, 0.90);
+  console.log("80% Confidence Interval: [$" + p10 + ", $" + p90 + "]");
+  console.log("");
+  
+  // Display the PDF
+  console.log("=== Strike Probabilities ===");
+  for (const sp of dist.strikeProbabilities) {
+    if (sp.probability > 0.001) {
+      const bars = Math.round(sp.probability * 100);
+      const marker = sp.strike === dist.mostLikelyPrice ? " ← MODE" : "";
+      console.log("$" + sp.strike + ": " + (sp.probability * 100).toFixed(1) + "% " + "█".repeat(bars) + marker);
+    }
+  }
+} else {
+  console.log("Error:", result.error);
+}
+`,
+  },
 };
 
 type ExampleKey = keyof typeof EXAMPLES;

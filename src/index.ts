@@ -54,9 +54,24 @@ export type {
   StrikeGenerationParams,
 } from './utils/occ';
 
+// Implied PDF (probability density function)
+export {
+  estimateImpliedProbabilityDistribution,
+  estimateImpliedProbabilityDistributions,
+  getProbabilityInRange,
+  getCumulativeProbability,
+  getQuantile,
+} from './impliedpdf';
+export type {
+  StrikeProbability,
+  ImpliedProbabilityDistribution,
+  ImpliedPDFResult,
+} from './impliedpdf';
+
 // Client
 export { FloeClient, Broker } from './client/FloeClient';
 export { TradierClient } from './client/brokers/TradierClient';
+export type { AggressorSide, IntradayTrade } from './client/brokers/TradierClient';
 
 // Broker adapters
 export {
@@ -68,3 +83,4 @@ export {
   getAdapter,
   createOptionChain,
 } from './adapters';
+
