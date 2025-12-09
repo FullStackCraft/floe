@@ -52,7 +52,7 @@ export interface StrikeGenerationParams {
   /** Number of strikes below spot to include */
   strikesBelow?: number;
   /** Strike increment (e.g., 1 for $1 increments, 5 for $5) */
-  strikeIncrement?: number;
+  strikeIncrementInDollars?: number;
 }
 
 /**
@@ -94,7 +94,8 @@ export function buildOCCSymbol(params: OCCSymbolParams): string {
     : symbol.toUpperCase();
 
   // Format expiration date as YYMMDD
-  const expirationDate = typeof expiration === 'string' ? new Date(expiration) : expiration;
+  // Use UTC methods to avoid timezone shifts when parsing ISO date strings
+  const expirationDate = typeof expiration === 'string' ? new Date(expiration + 'T12:00:00') : expiration;
   const year = expirationDate.getFullYear().toString().slice(-2);
   const month = (expirationDate.getMonth() + 1).toString().padStart(2, '0');
   const day = expirationDate.getDate().toString().padStart(2, '0');
@@ -156,11 +157,11 @@ export function parseOCCSymbol(occSymbol: string): ParsedOCCSymbol {
     throw new Error(`Invalid OCC symbol: no ticker found in ${occSymbol}`);
   }
 
-  // Parse date
+  // Parse date - use noon to avoid timezone edge cases
   const year = 2000 + parseInt(dateString.slice(0, 2), 10);
   const month = parseInt(dateString.slice(2, 4), 10) - 1; // 0-indexed
   const day = parseInt(dateString.slice(4, 6), 10);
-  const expiration = new Date(year, month, day);
+  const expiration = new Date(year, month, day, 12, 0, 0);
 
   // Validate date
   if (isNaN(expiration.getTime())) {
@@ -198,7 +199,7 @@ export function generateStrikesAroundSpot(params: StrikeGenerationParams): numbe
     spot,
     strikesAbove = 10,
     strikesBelow = 10,
-    strikeIncrement = 1
+    strikeIncrementInDollars: strikeIncrement = 1
   } = params;
 
   // Find the nearest strike at or below spot

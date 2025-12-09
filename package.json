@@ -1,6 +1,6 @@
 {
   "name": "@fullstackcraftllc/floe",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Production-ready options analytics toolkit. Normalize broker data structures and calculate Black-Scholes, Greeks, and exposures with a clean, type-safe API. Built for trading platforms and fintech applications.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -41,6 +41,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
+    "dotenv": "^17.2.3",
     "jest": "^29.5.0",
     "ts-jest": "^29.1.0",
     "typescript": "^5.9.3"

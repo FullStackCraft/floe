@@ -1,5 +1,6 @@
 import { NormalizedOption, NormalizedTicker } from "../types";
 import { TradierClient } from "./brokers/TradierClient";
+import { TastyTradeClient } from "./brokers/TastyTradeClient";
 
 /**
  * Supported broker integrations for the FloeClient.
@@ -8,7 +9,8 @@ import { TradierClient } from "./brokers/TradierClient";
 export enum Broker {
     /** Tradier brokerage API */
     TRADIER = "tradier",
-    // Future brokers can be added here
+    /** TastyTrade brokerage API (uses DxLink WebSocket) */
+    TASTYTRADE = "tastytrade",
 }
 
 /**
@@ -74,15 +76,12 @@ export class FloeClient {
     
     /** List of option symbols (OCC format) currently subscribed to */
     private currentSubscribedOptions: Array<string> = [];
-
-    /** Cache of the latest normalized ticker data */
-    private normalizedTickers: Array<NormalizedTicker> = [];
-    
-    /** Cache of the latest normalized option data */
-    private normalizedOptions: Array<NormalizedOption> = [];
     
     /** Tradier broker client instance */
     private tradierClient: TradierClient | null = null;
+
+    /** TastyTrade broker client instance */
+    private tastyTradeClient: TastyTradeClient | null = null;
 
     /** Event listeners registry for the EventEmitter pattern */
     private eventListeners: Map<FloeEventType, Set<FloeEventListener<any>>> = new Map();
@@ -156,6 +155,31 @@ export class FloeClient {
                 // Connect to the streaming API
                 await this.tradierClient.connect();
                 break;
+
+            case Broker.TASTYTRADE:
+                // For TastyTrade, authKey is the session token
+                this.tastyTradeClient = new TastyTradeClient({
+                    sessionToken: authKey,
+                });
+                
+                // Wire up TastyTradeClient events to FloeClient events
+                this.tastyTradeClient.on('tickerUpdate', (ticker: NormalizedTicker) => {
+                    this.emit('tickerUpdate', ticker);
+                });
+                this.tastyTradeClient.on('optionUpdate', (option: NormalizedOption) => {
+                    this.emit('optionUpdate', option);
+                });
+                this.tastyTradeClient.on('error', (error: Error) => {
+                    this.emit('error', error);
+                });
+                this.tastyTradeClient.on('disconnected', () => {
+                    this.emit('disconnected', { broker, reason: 'DxLink WebSocket disconnected' });
+                });
+
+                // Connect to the streaming API
+                await this.tastyTradeClient.connect();
+                break;
+
             default:
                 throw new Error(`Unsupported broker: ${broker}`);
         }
@@ -178,6 +202,11 @@ export class FloeClient {
         if (this.tradierClient) {
             this.tradierClient.disconnect();
             this.tradierClient = null;
+        }
+
+        if (this.tastyTradeClient) {
+            this.tastyTradeClient.disconnect();
+            this.tastyTradeClient = null;
         }
 
         const broker = this.currentBroker;
@@ -211,6 +240,9 @@ export class FloeClient {
         switch (this.currentBroker) {
             case Broker.TRADIER:
                 this.tradierClient?.subscribe(tickers);
+                break;
+            case Broker.TASTYTRADE:
+                this.tastyTradeClient?.subscribe(tickers);
                 break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
@@ -247,6 +279,9 @@ export class FloeClient {
             case Broker.TRADIER:
                 this.tradierClient?.subscribe(symbols);
                 break;
+            case Broker.TASTYTRADE:
+                this.tastyTradeClient?.subscribe(symbols);
+                break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
         }
@@ -273,6 +308,9 @@ export class FloeClient {
         switch (this.currentBroker) {
             case Broker.TRADIER:
                 this.tradierClient?.unsubscribe(tickers);
+                break;
+            case Broker.TASTYTRADE:
+                this.tastyTradeClient?.unsubscribe(tickers);
                 break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
@@ -301,8 +339,108 @@ export class FloeClient {
             case Broker.TRADIER:
                 this.tradierClient?.unsubscribe(symbols);
                 break;
+            case Broker.TASTYTRADE:
+                this.tastyTradeClient?.unsubscribe(symbols);
+                break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
+        }
+    }
+
+    /**
+     * Fetches open interest and initial option data via REST API.
+     * 
+     * @param symbols - Array of option symbols in OCC format to fetch data for.
+     *                  If not provided, fetches data for all currently subscribed options.
+     * @returns Promise that resolves when all data has been fetched
+     * 
+     * @throws {Error} Throws if no broker connection has been established
+     * 
+     * @remarks
+     * Open interest is not available via streaming and must be fetched via REST API.
+     * This method should be called after subscribing to options to populate
+     * open interest, volume, and initial bid/ask values.
+     * 
+     * The fetched data is automatically merged into the option cache and
+     * emitted via 'optionUpdate' events.
+     * 
+     * @example
+     * ```typescript
+     * // Subscribe to options
+     * client.subscribeToOptions(optionSymbols);
+     * 
+     * // Fetch open interest data
+     * await client.fetchOpenInterest();
+     * 
+     * // Options now have open interest populated
+     * client.on('optionUpdate', (option) => {
+     *     console.log(`${option.occSymbol}: OI=${option.openInterest}`);
+     * });
+     * ```
+     */
+    async fetchOpenInterest(symbols?: string[]): Promise<void> {
+        const symbolsToFetch = symbols ?? this.currentSubscribedOptions;
+        
+        if (symbolsToFetch.length === 0) {
+            return;
+        }
+
+        switch (this.currentBroker) {
+            case Broker.TRADIER:
+                await this.tradierClient?.fetchOpenInterest(symbolsToFetch);
+                break;
+            case Broker.TASTYTRADE:
+                await this.tastyTradeClient?.fetchOpenInterest(symbolsToFetch);
+                break;
+            default:
+                throw new Error(`Unsupported broker: ${this.currentBroker}`);
+        }
+    }
+
+    /**
+     * Returns cached option data for a specific symbol.
+     * 
+     * @param occSymbol - OCC option symbol
+     * @returns Cached option data, or undefined if not found
+     * 
+     * @example
+     * ```typescript
+     * const option = client.getOption('QQQ250117C00530000');
+     * console.log(`Open Interest: ${option?.openInterest}`);
+     * ```
+     */
+    getOption(occSymbol: string): NormalizedOption | undefined {
+        switch (this.currentBroker) {
+            case Broker.TRADIER:
+                return this.tradierClient?.getOption(occSymbol);
+            case Broker.TASTYTRADE:
+                return this.tastyTradeClient?.getOption(occSymbol);
+            default:
+                return undefined;
+        }
+    }
+
+    /**
+     * Returns all cached options.
+     * 
+     * @returns Map of OCC symbols to option data
+     * 
+     * @example
+     * ```typescript
+     * const allOptions = client.getAllOptions();
+     * for (const [symbol, option] of allOptions) {
+     *     console.log(`${symbol}: OI=${option.openInterest}`);
+     * }
+     * ```
+     */
+    getAllOptions(): Map<string, NormalizedOption> {
+        switch (this.currentBroker) {
+            case Broker.TRADIER:
+                return this.tradierClient?.getAllOptions() ?? new Map();
+            case Broker.TASTYTRADE:
+                return this.tastyTradeClient?.getAllOptions() ?? new Map();
+            default:
+                return new Map();
         }
     }
 

@@ -163,7 +163,7 @@ export function getIVSurfaces(
 }
 
 /**
- * Get smoothed IV for a specific expiration, option type, and strike
+ * Helper function to get the smoothed IV for a specific expiration, option type, and strike combination
  * 
  * @param ivSurfaces - Array of IV surfaces
  * @param expiration - Expiration timestamp in milliseconds
