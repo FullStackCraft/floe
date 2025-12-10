@@ -14,7 +14,7 @@ export default function DocumentationIndex() {
           </Link>
           <h1 className="font-mono text-4xl md:text-5xl font-bold mb-4">Documentation</h1>
           <p className="text-gray-600 text-lg">
-            Learn how to install and use floe for options analytics in your TypeScript applications.
+            Learn how to install and use <code>floe</code> for options analytics in your TypeScript applications.
           </p>
         </div>
 

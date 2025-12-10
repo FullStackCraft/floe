@@ -23,12 +23,15 @@ The same library that is used in Full Stack Craft's various fintech products inc
 
 ## Features
 
-- 🎯 **Black-Scholes Pricing** - Fast, accurate options pricing
-- 📊 **Greeks Calculations** - Delta, gamma, theta, vega, rho
-- 🔄 **Dealer Exposure Metrics** - GEX, VEX, and CEX exposures
-- 🔌 **Broker-Agnostic** - Normalize data from any broker
-- 💪 **Type-Safe** - Full TypeScript support
-- ⚡ **Zero Dependencies** - Lightweight and fast
+- **Black-Scholes Pricing** - Fast, accurate options pricing
+- **Greeks Calculations** - Delta, gamma, theta, vega, rho
+- **Dealer Exposure Metrics** - GEX, VEX, and CEX exposures
+- **Implied Volatility & Surfaces** - Calculate IV from market prices and build volatility surfaces
+- **Implied PDF** - Risk-neutral probability density functions
+- **Real-Time Data** - Stream normalized options data from multiple brokers
+- **Broker-Agnostic** - Normalize data from any broker
+- **Type-Safe** - Full TypeScript support
+- **Zero Dependencies** - Lightweight and fast
 
 ## Broker Support Roadmap
 
@@ -36,10 +39,11 @@ Due to the overwhelming variety of how broker APIs structure their data (and how
 
 | Broker                | Black-Scholes | Greeks | Open Interest Based Exposures | Options-Book Based Exposures | Implied PDF Calculations |
 |-----------------------|--------------|--------|-------------------------------|------------------------------|-------------------------|
-| Tradier (via WebSocket) | ✅           | ✅     | ✅                            | ✅                           | Coming soon                        |
-| Schwab (via WebSocket)              | Coming soon           | Coming soon     | Coming soon                            | Coming soon                           | Coming soon                        |
-| Tastytrade (via WebSocket - DXLink Streamer)               | Coming soon           | Coming soon     | Coming soon                            | Coming soon                           | Coming soon                        |
-| TradeStation (via HTTP Streaming)              | Coming soon           | Coming soon     | Coming soon                            | Coming soon                           | Coming soon                        |
+| Tradier (via WebSocket) | ✅           | ✅     | ✅                            | ✅                           |  ✅                         |
+| Tastytrade (via WebSocket - DXLink Streamer)               |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         |
+| TradeStation (via HTTP Streaming)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         |
+| Schwab (via WebSocket)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         |
+| Interactive Brokers (via WebSocket)              |  Coming Soon            |  Coming Soon      |  Coming Soon                             |  Coming Soon                            |  Coming Soon                         |
 
 Ideally all aspects of `floe` will be available for all brokers, but this will take time to determine as we work through the various data structures and formats that each broker provides.
 

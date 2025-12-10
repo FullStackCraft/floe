@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getExampleBySlug, getAllExampleSlugs } from "@/lib/markdown";
 import { highlightCode } from "@/lib/prism";
+import { TableOfContents } from "@/components/TableOfContents";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -14,34 +15,48 @@ export async function generateStaticParams() {
 
 export default async function ExamplePage({ params }: PageProps) {
   const { slug } = await params;
-  const example = await getExampleBySlug(slug);
+  const doc = await getExampleBySlug(slug);
 
-  if (!example) {
+  if (!doc) {
     notFound();
   }
 
-  const highlightedHtml = highlightCode(example.contentHtml);
+  const highlightedHtml = highlightCode(doc.contentHtml);
 
   return (
     <main className="min-h-screen px-4 py-16">
-      <article className="max-w-3xl mx-auto">
-        {/* Navigation */}
-        <Link href="/examples" className="text-gray-500 hover:text-black text-sm mb-8 inline-block">
-          ← Back to examples
-        </Link>
+      <div className="max-w-7xl mx-auto">
+        <div className="lg:grid lg:grid-cols-[1fr_220px] lg:gap-8">
+          {/* Main content */}
+          <article className="max-w-3xl">
+            {/* Navigation */}
+            <Link href="/examples" className="text-gray-500 hover:text-black text-sm mb-8 inline-block">
+              ← Back to examples
+            </Link>
 
-        {/* Title */}
-        <h1 className="font-mono text-3xl md:text-4xl font-bold mb-4">{example.title}</h1>
-        {example.description && (
-          <p className="text-gray-600 text-lg mb-8">{example.description}</p>
-        )}
+            {/* Title */}
+            <h1 className="font-mono text-3xl md:text-4xl font-bold mb-4">{doc.title}</h1>
+            {doc.description && (
+              <p className="text-gray-600 text-lg mb-8">{doc.description}</p>
+            )}
 
-        {/* Content */}
-        <div 
-          className="prose prose-gray max-w-none"
-          dangerouslySetInnerHTML={{ __html: highlightedHtml }} 
-        />
-      </article>
+            {/* Content */}
+            <div 
+              className="prose prose-gray max-w-none"
+              dangerouslySetInnerHTML={{ __html: highlightedHtml }} 
+            />
+          </article>
+
+          {/* Sidebar TOC - hidden on mobile, sticky on desktop */}
+          {doc.toc.length > 0 && (
+            <aside className="hidden lg:block">
+              <div className="sticky top-8">
+                <TableOfContents items={doc.toc} />
+              </div>
+            </aside>
+          )}
+        </div>
+      </div>
     </main>
   );
 }

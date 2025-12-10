@@ -50,7 +50,7 @@ const priceWithDividend = blackScholes({
   riskFreeRate: 0.05,
   volatility: 0.25,
   optionType: "call",
-  dividend: 0.02  // 2% annual dividend yield
+  dividendYield: 0.02  // 2% annual dividend yield
 });
 
 console.log(`ATM Call with 2% dividend: $${priceWithDividend.toFixed(2)}`);

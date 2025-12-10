@@ -6,119 +6,234 @@ order: 3
 
 ## Understanding Dealer Exposures
 
-Dealers who sell options to customers accumulate exposure that they must hedge. This hedging activity can amplify or dampen market moves.
+Dealers who sell options to customers accumulate exposure that they must hedge. This hedging activity can amplify or dampen market moves. The `calculateGammaVannaCharmExposures` function computes these exposures across an entire option chain.
 
-## Gamma Exposure (GEX)
+## Key Concepts
 
-Gamma exposure tells you how much dealers need to buy or sell the underlying as price moves:
+- **Gamma Exposure (GEX)**: Shows how much dealers need to buy/sell the underlying as price moves. Negative GEX means dealers buy dips and sell rallies (stabilizing). Positive GEX means dealers sell dips and buy rallies (destabilizing).
 
-```typescript
-import { dealerGammaExposure } from "@fullstackcraftllc/floe";
+- **Vanna Exposure**: Sensitivity to changes in implied volatility. Shows how dealer hedging changes when IV moves.
 
-const gex = dealerGammaExposure({
-  spot: 450,
-  strike: 450,
-  timeToExpiry: 0.0192,  // 7 days
-  riskFreeRate: 0.05,
-  volatility: 0.15,
-  openInterest: 50000,
-  optionType: "call"
-});
+- **Charm Exposure**: How delta (and therefore hedging needs) changes as time passes. Important for understanding end-of-day and expiration flows.
 
-console.log(`Gamma Exposure: ${gex.toLocaleString()} shares per 1% move`);
-```
+## Complete Exposure Calculation
 
-## Vanna Exposure
-
-Vanna exposure shows sensitivity to changes in implied volatility:
+Calculate all exposures across an option chain:
 
 ```typescript
-import { dealerVannaExposure } from "@fullstackcraftllc/floe";
-
-const vex = dealerVannaExposure({
-  spot: 450,
-  strike: 440,
-  timeToExpiry: 0.0833,
-  riskFreeRate: 0.05,
-  volatility: 0.18,
-  openInterest: 25000,
-  optionType: "put"
-});
-
-console.log(`Vanna Exposure: ${vex.toLocaleString()}`);
-```
-
-## Charm Exposure
-
-Charm exposure measures how gamma changes as time passes:
-
-```typescript
-import { dealerCharmExposure } from "@fullstackcraftllc/floe";
-
-const chex = dealerCharmExposure({
-  spot: 450,
-  strike: 455,
-  timeToExpiry: 0.00274,  // 1 day (0DTE)
-  riskFreeRate: 0.05,
-  volatility: 0.20,
-  openInterest: 100000,
-  optionType: "call"
-});
-
-console.log(`Charm Exposure: ${chex.toLocaleString()}`);
-```
-
-## Aggregate Exposure Across Chain
-
-Calculate total exposure across all strikes:
-
-```typescript
-import { 
-  dealerGammaExposure,
-  dealerVannaExposure 
+import {
+  calculateGammaVannaCharmExposures,
+  getIVSurfaces,
+  OptionChain,
+  NormalizedOption
 } from "@fullstackcraftllc/floe";
 
-interface OptionData {
-  strike: number;
-  callOI: number;
-  putOI: number;
-}
-
-const optionsChain: OptionData[] = [
-  { strike: 440, callOI: 10000, putOI: 15000 },
-  { strike: 445, callOI: 20000, putOI: 25000 },
-  { strike: 450, callOI: 50000, putOI: 45000 },
-  { strike: 455, callOI: 30000, putOI: 20000 },
-  { strike: 460, callOI: 15000, putOI: 10000 },
+// Build your option chain with market data
+const options: NormalizedOption[] = [
+  {
+    occSymbol: 'SPY251220C00440000',
+    underlying: 'SPY',
+    strike: 440,
+    expiration: '2025-12-20',
+    expirationTimestamp: 1766188800000,
+    optionType: 'call',
+    bid: 15.20,
+    ask: 15.40,
+    bidSize: 100,
+    askSize: 150,
+    mark: 15.30,
+    last: 15.25,
+    volume: 5000,
+    openInterest: 10000,
+    impliedVolatility: 0.18,
+    timestamp: Date.now()
+  },
+  // ... more options with openInterest data
 ];
 
-const spot = 450;
-const baseParams = {
-  spot,
-  timeToExpiry: 0.0192,
+const chain: OptionChain = {
+  symbol: 'SPY',
+  spot: 450.50,
   riskFreeRate: 0.05,
-  volatility: 0.16
+  dividendYield: 0.02,
+  options
 };
 
-let totalGEX = 0;
+// First, build IV surfaces
+const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
 
-for (const opt of optionsChain) {
-  const callGEX = dealerGammaExposure({
-    ...baseParams,
-    strike: opt.strike,
-    openInterest: opt.callOI,
-    optionType: "call"
-  });
+// Then calculate exposures
+const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+
+// Analyze results by expiration
+for (const expiry of exposures) {
+  console.log(`\nExpiration: ${new Date(expiry.expiration).toDateString()}`);
+  console.log(`  Spot: $${expiry.spotPrice}`);
+  console.log(`  Total Gamma: ${expiry.totalGammaExposure.toLocaleString()}`);
+  console.log(`  Total Vanna: ${expiry.totalVannaExposure.toLocaleString()}`);
+  console.log(`  Total Charm: ${expiry.totalCharmExposure.toLocaleString()}`);
+  console.log(`  Net Exposure: ${expiry.totalNetExposure.toLocaleString()}`);
+  console.log(`  Max Gamma Strike: $${expiry.strikeOfMaxGamma}`);
+  console.log(`  Min Gamma Strike: $${expiry.strikeOfMinGamma}`);
+}
+```
+
+## Strike-Level Analysis
+
+Drill down into individual strike exposures:
+
+```typescript
+// Using exposures from above
+for (const expiry of exposures) {
+  console.log(`\n=== ${new Date(expiry.expiration).toDateString()} ===`);
+  console.log('Strike    | Gamma Exp     | Vanna Exp     | Charm Exp     | Net Exp');
+  console.log('-'.repeat(75));
   
-  const putGEX = dealerGammaExposure({
-    ...baseParams,
-    strike: opt.strike,
-    openInterest: opt.putOI,
-    optionType: "put"
-  });
+  // Sort by strike price
+  const sortedStrikes = [...expiry.strikeExposures].sort(
+    (a, b) => a.strikePrice - b.strikePrice
+  );
   
-  totalGEX += callGEX + putGEX;
+  for (const strike of sortedStrikes) {
+    const gamma = strike.gammaExposure.toLocaleString().padStart(12);
+    const vanna = strike.vannaExposure.toLocaleString().padStart(12);
+    const charm = strike.charmExposure.toLocaleString().padStart(12);
+    const net = strike.netExposure.toLocaleString().padStart(12);
+    
+    console.log(`$${strike.strikePrice.toString().padStart(6)} | ${gamma} | ${vanna} | ${charm} | ${net}`);
+  }
+}
+```
+
+## Hedging Flow Estimation
+
+Calculate how many shares dealers need to trade:
+
+```typescript
+import { calculateSharesNeededToCover } from "@fullstackcraftllc/floe";
+
+// Sum up net exposure across all expirations
+const totalNetExposure = exposures.reduce(
+  (sum, exp) => sum + exp.totalNetExposure,
+  0
+);
+
+// SPY has approximately 900M shares outstanding
+const sharesOutstanding = 900_000_000;
+const spot = 450.50;
+
+const coverage = calculateSharesNeededToCover(
+  sharesOutstanding,
+  totalNetExposure,
+  spot
+);
+
+console.log('\n=== Dealer Hedging Analysis ===');
+console.log(`Total Net Exposure: ${totalNetExposure.toLocaleString()}`);
+console.log(`Dealers need to: ${coverage.actionToCover}`);
+console.log(`Shares to trade: ${coverage.sharesToCover.toLocaleString()}`);
+console.log(`Implied price move: ${coverage.impliedMoveToCover.toFixed(2)}%`);
+console.log(`Resulting price: $${coverage.resultingSpotToCover.toFixed(2)}`);
+```
+
+## Finding Key Levels
+
+Identify important gamma levels for trading:
+
+```typescript
+// Find the "gamma wall" - strike with highest absolute gamma
+let maxGammaStrike = 0;
+let maxGamma = 0;
+
+for (const expiry of exposures) {
+  for (const strike of expiry.strikeExposures) {
+    if (Math.abs(strike.gammaExposure) > maxGamma) {
+      maxGamma = Math.abs(strike.gammaExposure);
+      maxGammaStrike = strike.strikePrice;
+    }
+  }
 }
 
-console.log(`Total GEX: ${totalGEX.toLocaleString()} shares`);
+console.log(`\nGamma Wall: $${maxGammaStrike}`);
+console.log(`Gamma at wall: ${maxGamma.toLocaleString()}`);
+
+// Find zero gamma level (flip point)
+const nearestExpiry = exposures[0];
+if (nearestExpiry) {
+  const sortedByStrike = [...nearestExpiry.strikeExposures].sort(
+    (a, b) => a.strikePrice - b.strikePrice
+  );
+  
+  // Find where gamma crosses zero
+  for (let i = 1; i < sortedByStrike.length; i++) {
+    const prev = sortedByStrike[i - 1];
+    const curr = sortedByStrike[i];
+    
+    if (prev.gammaExposure < 0 && curr.gammaExposure >= 0) {
+      console.log(`Zero Gamma Level: ~$${(prev.strikePrice + curr.strikePrice) / 2}`);
+      break;
+    }
+  }
+}
+```
+
+## Real-World Integration
+
+Combine with FloeClient for live exposure tracking:
+
+```typescript
+import {
+  FloeClient,
+  Broker,
+  calculateGammaVannaCharmExposures,
+  getIVSurfaces,
+  generateOCCSymbolsAroundSpot
+} from "@fullstackcraftllc/floe";
+
+async function trackLiveExposures() {
+  const client = new FloeClient({ verbose: false });
+  await client.connect(Broker.TRADIER, process.env.TRADIER_TOKEN!);
+  
+  // Generate symbols for SPY options
+  const symbols = generateOCCSymbolsAroundSpot('SPY', '2025-12-20', 450, {
+    strikesAbove: 20,
+    strikesBelow: 20,
+    strikeIncrementInDollars: 1
+  });
+  
+  const optionData = new Map();
+  
+  client.on('optionUpdate', (option) => {
+    optionData.set(option.occSymbol, option);
+  });
+  
+  client.subscribeToOptions(symbols);
+  await client.fetchOpenInterest();
+  
+  // Wait for data to populate
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  
+  // Build chain from live data
+  const chain = {
+    symbol: 'SPY',
+    spot: 450.50,  // Get from ticker update
+    riskFreeRate: 0.05,
+    dividendYield: 0.02,
+    options: Array.from(optionData.values())
+  };
+  
+  // Calculate exposures
+  const surfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
+  const exposures = calculateGammaVannaCharmExposures(chain, surfaces);
+  
+  // Output analysis
+  console.log('Live Exposure Analysis:');
+  for (const exp of exposures) {
+    console.log(`${new Date(exp.expiration).toDateString()}: Net ${exp.totalNetExposure.toLocaleString()}`);
+  }
+  
+  client.disconnect();
+}
+
+trackLiveExposures();
 ```

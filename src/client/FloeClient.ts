@@ -1,6 +1,8 @@
 import { NormalizedOption, NormalizedTicker } from "../types";
 import { TradierClient } from "./brokers/TradierClient";
 import { TastyTradeClient } from "./brokers/TastyTradeClient";
+import { TradeStationClient } from "./brokers/TradeStationClient";
+import { SchwabClient } from "./brokers/SchwabClient";
 
 /**
  * Supported broker integrations for the FloeClient.
@@ -11,6 +13,10 @@ export enum Broker {
     TRADIER = "tradier",
     /** TastyTrade brokerage API (uses DxLink WebSocket) */
     TASTYTRADE = "tastytrade",
+    /** TradeStation brokerage API (uses HTTP streaming) */
+    TRADESTATION = "tradestation",
+    /** Charles Schwab brokerage API (uses WebSocket streaming) */
+    SCHWAB = "schwab",
 }
 
 /**
@@ -83,6 +89,12 @@ export class FloeClient {
     /** TastyTrade broker client instance */
     private tastyTradeClient: TastyTradeClient | null = null;
 
+    /** TradeStation broker client instance */
+    private tradeStationClient: TradeStationClient | null = null;
+
+    /** Schwab broker client instance */
+    private schwabClient: SchwabClient | null = null;
+
     /** Event listeners registry for the EventEmitter pattern */
     private eventListeners: Map<FloeEventType, Set<FloeEventListener<any>>> = new Map();
 
@@ -92,8 +104,16 @@ export class FloeClient {
     /** Callback for option data changes (legacy callback pattern) */
     private optionDataCallback: ((data: NormalizedOption) => void) | null = null;
 
+    /** Whether to log verbose debug information */
+    private readonly verbose: boolean;
+
     /**
      * Creates a new FloeClient instance.
+     * 
+     * @param options - Optional configuration options
+     * @param options.verbose - Whether to log verbose debug information for all broker clients (default: false).
+     *                         When enabled, logs critical debug info such as live open interest changes,
+     *                         connection events, and reconnection attempts.
      * 
      * @remarks
      * The client is created in a disconnected state. Call {@link connect} to
@@ -101,10 +121,15 @@ export class FloeClient {
      * 
      * @example
      * ```typescript
+     * // Create client with default settings
      * const client = new FloeClient();
+     * 
+     * // Create client with verbose logging enabled
+     * const verboseClient = new FloeClient({ verbose: true });
      * ```
      */
-    constructor() {
+    constructor(options?: { verbose?: boolean }) {
+        this.verbose = options?.verbose ?? false;
         // Initialize event listener maps for each event type
         this.eventListeners.set('tickerUpdate', new Set());
         this.eventListeners.set('optionUpdate', new Set());
@@ -136,7 +161,7 @@ export class FloeClient {
         // Connection logic to the broker's API using the authKey
         switch (broker.toLowerCase()) {
             case Broker.TRADIER:
-                this.tradierClient = new TradierClient(authKey);
+                this.tradierClient = new TradierClient(authKey, { verbose: this.verbose });
                 
                 // Wire up TradierClient events to FloeClient events
                 this.tradierClient.on('tickerUpdate', (ticker: NormalizedTicker) => {
@@ -160,6 +185,7 @@ export class FloeClient {
                 // For TastyTrade, authKey is the session token
                 this.tastyTradeClient = new TastyTradeClient({
                     sessionToken: authKey,
+                    verbose: this.verbose,
                 });
                 
                 // Wire up TastyTradeClient events to FloeClient events
@@ -178,6 +204,56 @@ export class FloeClient {
 
                 // Connect to the streaming API
                 await this.tastyTradeClient.connect();
+                break;
+
+            case Broker.TRADESTATION:
+                // For TradeStation, authKey is the OAuth access token
+                this.tradeStationClient = new TradeStationClient({
+                    accessToken: authKey,
+                    verbose: this.verbose,
+                });
+                
+                // Wire up TradeStationClient events to FloeClient events
+                this.tradeStationClient.on('tickerUpdate', (ticker: NormalizedTicker) => {
+                    this.emit('tickerUpdate', ticker);
+                });
+                this.tradeStationClient.on('optionUpdate', (option: NormalizedOption) => {
+                    this.emit('optionUpdate', option);
+                });
+                this.tradeStationClient.on('error', (error: Error) => {
+                    this.emit('error', error);
+                });
+                this.tradeStationClient.on('disconnected', () => {
+                    this.emit('disconnected', { broker, reason: 'HTTP stream disconnected' });
+                });
+
+                // Connect to the streaming API
+                await this.tradeStationClient.connect();
+                break;
+
+            case Broker.SCHWAB:
+                // For Schwab, authKey is the OAuth access token
+                this.schwabClient = new SchwabClient({
+                    accessToken: authKey,
+                    verbose: this.verbose,
+                });
+                
+                // Wire up SchwabClient events to FloeClient events
+                this.schwabClient.on('tickerUpdate', (ticker: NormalizedTicker) => {
+                    this.emit('tickerUpdate', ticker);
+                });
+                this.schwabClient.on('optionUpdate', (option: NormalizedOption) => {
+                    this.emit('optionUpdate', option);
+                });
+                this.schwabClient.on('error', (error: Error) => {
+                    this.emit('error', error);
+                });
+                this.schwabClient.on('disconnected', () => {
+                    this.emit('disconnected', { broker, reason: 'Schwab WebSocket disconnected' });
+                });
+
+                // Connect to the streaming API
+                await this.schwabClient.connect();
                 break;
 
             default:
@@ -207,6 +283,16 @@ export class FloeClient {
         if (this.tastyTradeClient) {
             this.tastyTradeClient.disconnect();
             this.tastyTradeClient = null;
+        }
+
+        if (this.tradeStationClient) {
+            this.tradeStationClient.disconnect();
+            this.tradeStationClient = null;
+        }
+
+        if (this.schwabClient) {
+            this.schwabClient.disconnect();
+            this.schwabClient = null;
         }
 
         const broker = this.currentBroker;
@@ -243,6 +329,12 @@ export class FloeClient {
                 break;
             case Broker.TASTYTRADE:
                 this.tastyTradeClient?.subscribe(tickers);
+                break;
+            case Broker.TRADESTATION:
+                this.tradeStationClient?.subscribe(tickers);
+                break;
+            case Broker.SCHWAB:
+                this.schwabClient?.subscribe(tickers);
                 break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
@@ -282,6 +374,12 @@ export class FloeClient {
             case Broker.TASTYTRADE:
                 this.tastyTradeClient?.subscribe(symbols);
                 break;
+            case Broker.TRADESTATION:
+                this.tradeStationClient?.subscribe(symbols);
+                break;
+            case Broker.SCHWAB:
+                this.schwabClient?.subscribe(symbols);
+                break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
         }
@@ -312,6 +410,12 @@ export class FloeClient {
             case Broker.TASTYTRADE:
                 this.tastyTradeClient?.unsubscribe(tickers);
                 break;
+            case Broker.TRADESTATION:
+                this.tradeStationClient?.unsubscribe(tickers);
+                break;
+            case Broker.SCHWAB:
+                this.schwabClient?.unsubscribe(tickers);
+                break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
         }
@@ -341,6 +445,12 @@ export class FloeClient {
                 break;
             case Broker.TASTYTRADE:
                 this.tastyTradeClient?.unsubscribe(symbols);
+                break;
+            case Broker.TRADESTATION:
+                this.tradeStationClient?.unsubscribe(symbols);
+                break;
+            case Broker.SCHWAB:
+                this.schwabClient?.unsubscribe(symbols);
                 break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
@@ -392,6 +502,13 @@ export class FloeClient {
             case Broker.TASTYTRADE:
                 await this.tastyTradeClient?.fetchOpenInterest(symbolsToFetch);
                 break;
+            case Broker.TRADESTATION:
+                // TradeStation provides open interest via stream, no separate fetch needed
+                // OI is automatically populated when streaming option chains
+                break;
+            case Broker.SCHWAB:
+                await this.schwabClient?.fetchOpenInterest(symbolsToFetch);
+                break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
         }
@@ -415,6 +532,10 @@ export class FloeClient {
                 return this.tradierClient?.getOption(occSymbol);
             case Broker.TASTYTRADE:
                 return this.tastyTradeClient?.getOption(occSymbol);
+            case Broker.TRADESTATION:
+                return this.tradeStationClient?.getOption(occSymbol);
+            case Broker.SCHWAB:
+                return this.schwabClient?.getOption(occSymbol);
             default:
                 return undefined;
         }
@@ -439,6 +560,10 @@ export class FloeClient {
                 return this.tradierClient?.getAllOptions() ?? new Map();
             case Broker.TASTYTRADE:
                 return this.tastyTradeClient?.getAllOptions() ?? new Map();
+            case Broker.TRADESTATION:
+                return this.tradeStationClient?.getAllOptions() ?? new Map();
+            case Broker.SCHWAB:
+                return this.schwabClient?.getAllOptions() ?? new Map();
             default:
                 return new Map();
         }

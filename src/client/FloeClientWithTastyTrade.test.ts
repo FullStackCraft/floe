@@ -692,3 +692,64 @@ describe('DxLink Symbol Conversion', () => {
     console.log('✅ OCC symbol parsing verified');
   });
 });
+
+describe('Verbose Mode', () => {
+  it('should create client with verbose logging enabled', () => {
+    // Arrange & Act
+    const verboseClient = new FloeClient({ verbose: true });
+    const normalClient = new FloeClient();
+    const explicitFalseClient = new FloeClient({ verbose: false });
+
+    // Assert - all should be created successfully
+    expect(verboseClient).toBeDefined();
+    expect(normalClient).toBeDefined();
+    expect(explicitFalseClient).toBeDefined();
+
+    console.log('✅ Verbose mode clients created successfully');
+  });
+
+  it('should log verbose information when enabled', async () => {
+    if (shouldSkip) {
+      console.log('Skipping test: No TastyTrade credentials provided');
+      return;
+    }
+
+    // This test demonstrates verbose logging - check console output
+    console.log('\n='.repeat(60));
+    console.log('VERBOSE MODE TEST - Watch for [TastyTrade:*] log messages');
+    console.log('='.repeat(60));
+
+    const client = new FloeClient({ verbose: true });
+
+    try {
+      await client.connect(Broker.TASTYTRADE, sessionToken);
+      
+      // Subscribe to a few options to trigger OI logging
+      const optionSymbols = generateOCCSymbolsAroundSpot(
+        TEST_SYMBOL,
+        TEST_EXPIRATION,
+        TEST_SPOT_PRICE,
+        {
+          strikesAbove: 2,
+          strikesBelow: 2,
+          strikeIncrementInDollars: STRIKE_INCREMENT,
+        }
+      );
+
+      client.subscribeToOptions(optionSymbols);
+      
+      // Fetch OI to trigger base OI logging
+      await client.fetchOpenInterest();
+
+      // Wait briefly for any streaming updates
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      console.log('='.repeat(60));
+      console.log('Check above for [TastyTrade:OI] and [TastyTrade:DxLink] log messages');
+      console.log('='.repeat(60));
+
+    } finally {
+      client.disconnect();
+    }
+  }, 30000);
+});

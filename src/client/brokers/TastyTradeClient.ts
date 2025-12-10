@@ -349,19 +349,25 @@ export class TastyTradeClient {
   /** Whether to use sandbox environment */
   private readonly sandbox: boolean;
 
+  /** Whether to log verbose debug information */
+  private readonly verbose: boolean;
+
   /**
    * Creates a new TastyTradeClient instance.
    * 
    * @param options - Client configuration options
    * @param options.sessionToken - TastyTrade session token (required)
    * @param options.sandbox - Whether to use sandbox environment (default: false)
+   * @param options.verbose - Whether to log verbose debug information (default: false)
    */
   constructor(options: {
     sessionToken: string;
     sandbox?: boolean;
+    verbose?: boolean;
   }) {
     this.sessionToken = options.sessionToken;
     this.sandbox = options.sandbox ?? false;
+    this.verbose = options.verbose ?? false;
     this.apiBaseUrl = this.sandbox 
       ? 'https://api.cert.tastyworks.com'
       : 'https://api.tastyworks.com';
@@ -590,6 +596,10 @@ export class TastyTradeClient {
           // Store base OI
           if (item['open-interest'] !== undefined) {
             this.baseOpenInterest.set(occSymbol, item['open-interest']);
+            
+            if (this.verbose) {
+              console.log(`[TastyTrade:OI] Base OI set for ${occSymbol}: ${item['open-interest']}`);
+            }
           }
 
           if (!this.cumulativeOIChange.has(occSymbol)) {
@@ -1061,6 +1071,9 @@ export class TastyTradeClient {
       this.authorized = true;
       this.startKeepalive();
       this.openFeedChannel();
+      if (this.verbose) {
+        console.log('[TastyTrade:DxLink] Authorized and connected');
+      }
       this.emit('connected', undefined);
       connectResolve?.();
     } else {
@@ -1223,6 +1236,9 @@ export class TastyTradeClient {
       // Update base OI if not set
       if (!this.baseOpenInterest.has(symbol)) {
         this.baseOpenInterest.set(symbol, openInterest);
+        if (this.verbose) {
+          console.log(`[TastyTrade:OI] Base OI set from stream for ${symbol}: ${openInterest}`);
+        }
       }
     }
   }
@@ -1371,6 +1387,12 @@ export class TastyTradeClient {
     const estimatedOIChange = this.calculateOIChangeFromTrade(aggressorSide, size, parsed.optionType);
     const currentChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
     this.cumulativeOIChange.set(occSymbol, currentChange + estimatedOIChange);
+    
+    if (this.verbose && estimatedOIChange !== 0) {
+      const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
+      const newLiveOI = Math.max(0, baseOI + currentChange + estimatedOIChange);
+      console.log(`[TastyTrade:OI] ${occSymbol} trade: price=${price.toFixed(2)}, size=${size}, aggressor=${aggressorSide}, OI change=${estimatedOIChange > 0 ? '+' : ''}${estimatedOIChange}, liveOI=${newLiveOI} (base=${baseOI}, cumulative=${currentChange + estimatedOIChange})`);
+    }
 
     // Record trade
     const trade: IntradayTrade = {
@@ -1470,6 +1492,10 @@ export class TastyTradeClient {
 
     this.reconnectAttempts++;
     const delay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+
+    if (this.verbose) {
+      console.log(`[TastyTrade:DxLink] Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+    }
 
     await this.sleep(delay);
 

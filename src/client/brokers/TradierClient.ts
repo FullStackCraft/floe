@@ -274,13 +274,19 @@ export class TradierClient {
   /** Tradier WebSocket URL */
   private readonly wsUrl: string = 'wss://ws.tradier.com/v1/markets/events';
 
+  /** Whether to log verbose debug information */
+  private readonly verbose: boolean;
+
   /**
    * Creates a new TradierClient instance.
    * 
    * @param authKey - Tradier API access token
+   * @param options - Optional configuration options
+   * @param options.verbose - Whether to log verbose debug information (default: false)
    */
-  constructor(authKey: string) {
+  constructor(authKey: string, options?: { verbose?: boolean }) {
     this.authKey = authKey;
+    this.verbose = options?.verbose ?? false;
 
     // Initialize event listener maps
     this.eventListeners.set('tickerUpdate', new Set());
@@ -474,6 +480,10 @@ export class TradierClient {
           // Store base open interest for live OI calculation (t=0 reference)
           this.baseOpenInterest.set(item.symbol, item.open_interest);
           
+          if (this.verbose) {
+            console.log(`[Tradier:OI] Base OI set for ${item.symbol}: ${item.open_interest}`);
+          }
+          
           // Initialize cumulative OI change if not already set
           if (!this.cumulativeOIChange.has(item.symbol)) {
             this.cumulativeOIChange.set(item.symbol, 0);
@@ -623,6 +633,9 @@ export class TradierClient {
       this.ws.onopen = () => {
         this.connected = true;
         this.reconnectAttempts = 0;
+        if (this.verbose) {
+          console.log('[Tradier:WS] Connected to streaming API');
+        }
         this.emit('connected', undefined);
 
         // Subscribe to any queued symbols
@@ -669,6 +682,10 @@ export class TradierClient {
 
     this.reconnectAttempts++;
     const delay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+
+    if (this.verbose) {
+      console.log(`[Tradier:WS] Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+    }
 
     await this.sleep(delay);
 
@@ -934,6 +951,12 @@ export class TradierClient {
     // Update cumulative OI change
     const currentChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
     this.cumulativeOIChange.set(occSymbol, currentChange + estimatedOIChange);
+    
+    if (this.verbose && estimatedOIChange !== 0) {
+      const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
+      const newLiveOI = Math.max(0, baseOI + currentChange + estimatedOIChange);
+      console.log(`[Tradier:OI] ${occSymbol} trade: price=${last.toFixed(2)}, size=${size}, aggressor=${aggressorSide}, OI change=${estimatedOIChange > 0 ? '+' : ''}${estimatedOIChange}, liveOI=${newLiveOI} (base=${baseOI}, cumulative=${currentChange + estimatedOIChange})`);
+    }
     
     // Record the trade for analysis
     const trade: IntradayTrade = {
