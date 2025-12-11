@@ -218,7 +218,7 @@ const OCC_OPTION_PATTERN = /^.{1,6}\d{6}[CP]\d{8}$/;
  */
 export class TradierClient {
   /** Tradier API authentication token */
-  private authKey: string;
+  private authToken: string;
 
   /** Current streaming session */
   private streamSession: TradierStreamSession | null = null;
@@ -280,12 +280,12 @@ export class TradierClient {
   /**
    * Creates a new TradierClient instance.
    * 
-   * @param authKey - Tradier API access token
+   * @param authToken - Tradier API auth token
    * @param options - Optional configuration options
    * @param options.verbose - Whether to log verbose debug information (default: false)
    */
-  constructor(authKey: string, options?: { verbose?: boolean }) {
-    this.authKey = authKey;
+  constructor(authToken: string, options?: { verbose?: boolean }) {
+    this.authToken = authToken;
     this.verbose = options?.verbose ?? false;
 
     // Initialize event listener maps
@@ -405,7 +405,7 @@ export class TradierClient {
         {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${this.authKey}`,
+            'Authorization': `Bearer ${this.authToken}`,
             'Accept': 'application/json',
           },
         }
@@ -605,7 +605,7 @@ export class TradierClient {
       const response = await fetch(`${this.apiBaseUrl}/markets/events/session`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.authKey}`,
+          'Authorization': `Bearer ${this.authToken}`,
           'Accept': 'application/json',
         },
       });

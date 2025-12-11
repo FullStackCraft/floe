@@ -142,7 +142,7 @@ export class FloeClient {
      * Establishes a connection to a broker's API.
      * 
      * @param broker - The broker to connect to (e.g., Broker.TRADIER)
-     * @param authKey - The API authentication key or token for the broker
+     * @param authToken - The API authentication token for the broker
      * 
      * @throws {Error} Throws if the specified broker is not supported
      * 
@@ -155,13 +155,13 @@ export class FloeClient {
      * await client.connect(Broker.TRADIER, 'your-tradier-api-key');
      * ```
      */
-    async connect(broker: Broker, authKey: string): Promise<void> {
+    async connect(broker: Broker, authToken: string): Promise<void> {
         this.currentBroker = broker;
 
-        // Connection logic to the broker's API using the authKey
+        // Connection logic to the broker's API using the authToken
         switch (broker.toLowerCase()) {
             case Broker.TRADIER:
-                this.tradierClient = new TradierClient(authKey, { verbose: this.verbose });
+                this.tradierClient = new TradierClient(authToken, { verbose: this.verbose });
                 
                 // Wire up TradierClient events to FloeClient events
                 this.tradierClient.on('tickerUpdate', (ticker: NormalizedTicker) => {
@@ -182,9 +182,9 @@ export class FloeClient {
                 break;
 
             case Broker.TASTYTRADE:
-                // For TastyTrade, authKey is the session token
+                // For TastyTrade, authToken is the session token
                 this.tastyTradeClient = new TastyTradeClient({
-                    sessionToken: authKey,
+                    sessionToken: authToken,
                     verbose: this.verbose,
                 });
                 
@@ -207,9 +207,9 @@ export class FloeClient {
                 break;
 
             case Broker.TRADESTATION:
-                // For TradeStation, authKey is the OAuth access token
+                // For TradeStation, authToken is the OAuth access token
                 this.tradeStationClient = new TradeStationClient({
-                    accessToken: authKey,
+                    accessToken: authToken,
                     verbose: this.verbose,
                 });
                 
@@ -232,9 +232,9 @@ export class FloeClient {
                 break;
 
             case Broker.SCHWAB:
-                // For Schwab, authKey is the OAuth access token
+                // For Schwab, authToken is the OAuth access token
                 this.schwabClient = new SchwabClient({
-                    accessToken: authKey,
+                    accessToken: authToken,
                     verbose: this.verbose,
                 });
                 
