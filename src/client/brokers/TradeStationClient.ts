@@ -455,6 +455,16 @@ export class TradeStationClient {
   }
 
   /**
+   * Unsubscribes from all real-time updates.
+   */
+  unsubscribeFromAll(): void {
+    this.subscribedTickers.clear();
+    this.subscribedOptions.clear();
+    this.stopStream('quotes');
+    this.stopStream('options');
+  }
+
+  /**
    * Returns whether the client is currently connected.
    */
   isConnected(): boolean {

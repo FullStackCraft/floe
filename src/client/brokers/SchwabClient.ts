@@ -529,6 +529,32 @@ export class SchwabClient {
   }
 
   /**
+   * Unsubscribes from all real-time updates.
+   */
+  unsubscribeFromAll(): void {
+    const allSymbols = Array.from(this.subscribedSymbols);
+    const allOptionSymbols = allSymbols.filter(s => this.isOptionSymbol(s)).map(s => this.toSchwabOptionSymbol(s));
+    this.subscribedSymbols.clear();
+    // unsub from all equities
+    if (allSymbols.length > 0) {
+      const request = this.makeRequest('LEVELONE_EQUITIES', 'UNSUBS', {
+        keys: allSymbols.join(','),
+      });
+      this.sendMessage({ requests: [request] });
+    }
+    // unsub from all options (quotes and book)
+    if (allOptionSymbols.length > 0) {
+      const requestOptions = this.makeRequest('LEVELONE_OPTIONS', 'UNSUBS', {
+        keys: allOptionSymbols.join(','),
+      });
+      const requestBook = this.makeRequest('OPTIONS_BOOK', 'UNSUBS', {
+        keys: allOptionSymbols.join(','),
+      });
+      this.sendMessage({ requests: [requestOptions, requestBook] });
+    }
+  }
+
+  /**
    * Returns whether the client is currently connected.
    */
   isConnected(): boolean {

@@ -361,14 +361,32 @@ export class TradierClient {
    * @param symbols - Array of symbols to unsubscribe from
    * 
    * @remarks
-   * Note: Tradier's streaming API doesn't support unsubscription for individual
-   * symbols. This method removes them from local tracking. To fully unsubscribe,
-   * you would need to disconnect and reconnect with the new symbol list.
+   * Since Tradier's streaming API doesn't support selective unsubscription,
+   * this method disconnects and reconnects with the updated symbol list.
    */
-  unsubscribe(symbols: string[]): void {
+  async unsubscribe(symbols: string[]): Promise<void> {
     symbols.forEach(s => this.subscribedSymbols.delete(s));
-    // Note: Tradier doesn't support selective unsubscribe
-    // Would need to reconnect with new symbol list for full effect
+    
+    // If connected, reconnect with the new symbol list
+    if (this.connected) {
+      await this.reconnectWithSymbols();
+    }
+  }
+
+  /**
+   * Unsubscribes from all symbols.
+   * 
+   * @remarks
+   * Since Tradier's streaming API doesn't support selective unsubscription,
+   * this method disconnects and reconnects without any symbols.
+   */
+  async unsubscribeFromAll(): Promise<void> {
+    this.subscribedSymbols.clear();
+    
+    // If connected, reconnect with empty symbol list
+    if (this.connected) {
+      await this.reconnectWithSymbols();
+    }
   }
 
   /**
@@ -694,6 +712,25 @@ export class TradierClient {
     } catch {
       // Reconnect attempt failed, will try again via onclose
     }
+  }
+
+  /**
+   * Reconnects with the current symbol list.
+   * Used for unsubscribe operations since Tradier doesn't support selective unsubscription.
+   */
+  private async reconnectWithSymbols(): Promise<void> {
+    if (this.verbose) {
+      console.log(`[Tradier:WS] Reconnecting with ${this.subscribedSymbols.size} symbols`);
+    }
+
+    // Disconnect cleanly
+    this.disconnect();
+
+    // Wait briefly to ensure clean disconnect
+    await this.sleep(100);
+
+    // Reconnect with current symbol list
+    await this.connect();
   }
 
   /**

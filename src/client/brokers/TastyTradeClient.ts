@@ -520,6 +520,18 @@ export class TastyTradeClient {
   }
 
   /**
+   * Unsubscribes from all real-time updates.
+   */
+  unsubscribeFromAll(): void {
+    const symbols = Array.from(this.subscribedSymbols);
+    this.subscribedSymbols.clear();
+    if (!this.connected || !this.feedChannelOpened) {
+      return;
+    }
+    this.sendFeedSubscription(symbols, 'remove');
+  }
+
+  /**
    * Returns whether the client is currently connected.
    */
   isConnected(): boolean {

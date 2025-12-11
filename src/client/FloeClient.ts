@@ -458,6 +458,41 @@ export class FloeClient {
     }
 
     /**
+     * Unsubscribes from all currently subscribed tickers and options.
+     * 
+     * @throws {Error} Throws if no broker connection has been established
+     * 
+     * @remarks
+     * After calling this method, no further updates will be received for any
+     * previously subscribed tickers or options.
+     * 
+     * @example
+     * ```typescript
+     * client.unsubscribeFromAll();
+     * ```
+     */
+    unsubscribeFromAll(): void {
+        this.currentSubscribedTickers = [];
+        this.currentSubscribedOptions = [];
+        switch (this.currentBroker) {
+            case Broker.TRADIER:
+                this.tradierClient?.unsubscribeFromAll();
+                break;
+            case Broker.TASTYTRADE:
+                this.tastyTradeClient?.unsubscribeFromAll();
+                break;
+            case Broker.TRADESTATION:
+                this.tradeStationClient?.unsubscribeFromAll();
+                break;
+            case Broker.SCHWAB:
+                this.schwabClient?.unsubscribeFromAll();
+                break;
+            default:
+                throw new Error(`Unsupported broker: ${this.currentBroker}`);
+        }
+    }
+
+    /**
      * Fetches open interest and initial option data via REST API.
      * 
      * @param symbols - Array of option symbols in OCC format to fetch data for.
