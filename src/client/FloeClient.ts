@@ -9,6 +9,8 @@ import { SchwabClient } from "./brokers/SchwabClient";
  * @enum {string}
  */
 export enum Broker {
+    /** Placeholder for no currently connected broker */
+    NONE = "none",
     /** Tradier brokerage API */
     TRADIER = "tradier",
     /** TastyTrade brokerage API (uses DxLink WebSocket) */
@@ -160,6 +162,9 @@ export class FloeClient {
 
         // Connection logic to the broker's API using the authToken
         switch (broker.toLowerCase()) {
+            case Broker.NONE:
+                // No action needed for NONE broker; no-op
+                break;
             case Broker.TRADIER:
                 this.tradierClient = new TradierClient(authToken, { verbose: this.verbose });
                 
