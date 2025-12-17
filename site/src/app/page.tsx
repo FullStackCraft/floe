@@ -23,6 +23,16 @@ export default function Home() {
         <p className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
           Zero-dependency TypeScript functions for options flow: Black-Scholes, greeks, dealer exposures, implied PDFs, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.
         </p>
+        <div className="mt-6">
+          <a
+            href="/whitepaper.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block font-mono text-sm text-white bg-[#CB3837] px-6 py-3 rounded hover:bg-[#B03231] transition-colors"
+          >
+            Read Whitepaper
+          </a>
+        </div>
       </div>
 
       {/* Navigation Cards */}

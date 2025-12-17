@@ -1,0 +1,269 @@
+\documentclass[11pt, a4paper]{article}
+
+% Packages
+\usepackage[margin=1.75in]{geometry}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{amsmath, amsthm, amssymb}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[table]{xcolor}
+
+% Header and Footer
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\thepage}
+
+% Section Formatting
+\titleformat{\section}{\normalfont\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries}{\thesubsection}{1em}{}
+
+% Add hyperref last
+\usepackage[hidelinks]{hyperref}
+
+\title{Introducing \texttt{floe}: Real-time Calculation of Dealer Gamma, Vanna, and Charm Exposures via Broker Data}
+\author{Full Stack Craft LLC}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\noindent\textbf{Repository:} \href{https://github.com/FullStackCraft/floe}{https://github.com/FullStackCraft/floe}
+\medskip
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+This paper introduces \texttt{floe}: a zero-dependency, browser-only TypeScript library for for computing real-time dealer gamma, vanna, and charm exposures from streaming broker data. The approach consists of two phases: an initialization phase that captures open interest at market open ($t=0$), and a continuous update phase that recalculates exposures as new spot prices and option quotes arrive.
+
+\section{Initialization Phase: Capturing Open Interest}
+
+At market open, we fetch the complete option chain $\mathcal{O}$ for the underlying symbol. Each option $o \in \mathcal{O}$ contains:
+
+\begin{align*}
+o = \langle K, T, \phi, \text{bid}, \text{ask}, \text{OI}_0 \rangle
+\end{align*}
+
+Where:
+\begin{itemize}
+    \item $K$ = strike price
+    \item $T$ = expiration timestamp (milliseconds)
+    \item $\phi \in \{\text{call}, \text{put}\}$ = option type
+    \item $\text{bid}, \text{ask}$ = current bid/ask prices
+    \item $\text{OI}_0$ = open interest at $t=0$
+\end{itemize}
+
+The market context includes the current spot price $S_0$, risk-free rate $r$, and dividend yield $q$.
+
+\section{Black-Scholes Greeks Calculation}
+
+For each option, we compute Greeks using the Black-Scholes-Merton model with continuous dividend yield.
+
+\subsection{Core Parameters}
+
+Given spot $S$, strike $K$, time to expiry $\tau$ (in years), volatility $\sigma$, risk-free rate $r$, and dividend yield $q$:
+
+\begin{align}
+d_1 &= \frac{\ln(S/K) + (r - q + \sigma^2/2)\tau}{\sigma\sqrt{\tau}} \\
+d_2 &= d_1 - \sigma\sqrt{\tau}
+\end{align}
+
+\subsection{First-Order Greeks}
+
+For a \textbf{call} option:
+\begin{align}
+\Delta_C &= e^{-q\tau} N(d_1) \\
+\Gamma &= \frac{e^{-q\tau} n(d_1)}{S \sigma \sqrt{\tau}} \\
+\Theta_C &= -\frac{S \sigma e^{-q\tau} n(d_1)}{2\sqrt{\tau}} - rKe^{-r\tau}N(d_2) + qSe^{-q\tau}N(d_1) \\
+\mathcal{V} &= S e^{-q\tau} \sqrt{\tau} \cdot n(d_1)
+\end{align}
+
+For a \textbf{put} option:
+\begin{align}
+\Delta_P &= -e^{-q\tau} N(-d_1) \\
+\Theta_P &= -\frac{S \sigma e^{-q\tau} n(d_1)}{2\sqrt{\tau}} + rKe^{-r\tau}N(-d_2) - qSe^{-q\tau}N(-d_1)
+\end{align}
+
+Where $N(\cdot)$ is the cumulative normal distribution and $n(\cdot)$ is the standard normal PDF:
+\begin{align}
+n(x) &= \frac{1}{\sqrt{2\pi}} e^{-x^2/2} \\
+N(x) &\approx 1 - n(x) \cdot t \cdot (a_1 + t(a_2 + t(a_3 + t(a_4 + t \cdot a_5)))) \quad \text{for } x > 0
+\end{align}
+
+using the Abramowitz-Stegun approximation with $t = 1/(1 + 0.2316419|x|)$.
+
+\subsection{Second-Order Greeks}
+
+\begin{align}
+\text{Vanna} &= -e^{-q\tau} n(d_1) \frac{d_2}{\sigma} \\
+\text{Charm}_C &= -q e^{-q\tau} N(d_1) - \frac{e^{-q\tau} n(d_1) \left(2(r-q)\tau - d_2 \sigma \sqrt{\tau}\right)}{2\tau \sigma \sqrt{\tau}} \\
+\text{Volga} &= \mathcal{V} \cdot \frac{d_1 d_2}{S\sigma}
+\end{align}
+
+\section{Implied Volatility Surface Construction}
+
+\subsection{IV Calculation via Bisection}
+
+For each option with observed market price $P_{\text{mkt}}$, we solve for $\sigma_{\text{IV}}$:
+
+\begin{align}
+\text{BS}(S, K, \tau, \sigma_{\text{IV}}, r, q, \phi) = P_{\text{mkt}}
+\end{align}
+
+Using bisection search with bounds $\sigma \in [0.0001, 5.0]$ (0.01\% to 500\% volatility).
+
+\subsection{Total Variance Smoothing}
+
+To ensure arbitrage-free and smooth IV surfaces, we apply total variance smoothing:
+
+\begin{enumerate}
+    \item Convert IV to total variance: $w(K) = \sigma^2 \tau$
+    \item Apply cubic spline interpolation to $w(K)$
+    \item Enforce convexity via convex hull projection
+    \item Convert back to IV: $\sigma_{\text{smooth}}(K) = \sqrt{w(K)/\tau}$
+\end{enumerate}
+
+The convexity constraint ensures no calendar spread arbitrage exists in the surface.
+
+\section{Dealer Exposure Calculation}
+
+\subsection{Dealer Position Assumption}
+
+We assume dealers are net short options (standard market-maker hedging assumption):
+\begin{itemize}
+    \item \textbf{Short calls}: Dealers sold calls to retail buyers
+    \item \textbf{Long puts}: Dealers bought puts from retail sellers (equivalently, short put exposure is negative)
+\end{itemize}
+
+\subsection{Exposure Formulas}
+
+For each strike $K$ with call open interest $\text{OI}_C$ and put open interest $\text{OI}_P$:
+
+\textbf{Gamma Exposure (GEX)}:
+\begin{align}
+\text{GEX}_K = \left(-\text{OI}_C \cdot \Gamma_C + \text{OI}_P \cdot \Gamma_P\right) \cdot (S \cdot 100) \cdot S \cdot 0.01
+\end{align}
+
+\textbf{Vanna Exposure (VEX)}:
+\begin{align}
+\text{VEX}_K = \left(-\text{OI}_C \cdot \text{Vanna}_C + \text{OI}_P \cdot \text{Vanna}_P\right) \cdot (S \cdot 100) \cdot \sigma_{\text{IV}} \cdot 0.01
+\end{align}
+
+\textbf{Charm Exposure (CEX)}:
+\begin{align}
+\text{CEX}_K = \left(-\text{OI}_C \cdot \text{Charm}_C + \text{OI}_P \cdot \text{Charm}_P\right) \cdot (S \cdot 100) \cdot 365\tau
+\end{align}
+
+The factor of 100 accounts for contract multiplier. The $0.01$ factor normalizes to a 1\% move.
+
+\subsection{Total Exposures}
+
+Sum across all strikes for each expiration:
+\begin{align}
+\text{GEX}_{\text{total}} &= \sum_K \text{GEX}_K \\
+\text{VEX}_{\text{total}} &= \sum_K \text{VEX}_K \\
+\text{CEX}_{\text{total}} &= \sum_K \text{CEX}_K \\
+\text{Net Exposure} &= \text{NEX}_{\text{total}} &= \text{GEX}_{\text{total}} + \text{VEX}_{\text{total}} + \text{CEX}_{\text{total}}
+\end{align}
+
+\section{Real-Time Update Process}
+
+\subsection{Event-Driven Architecture}
+
+The system subscribes to streaming quote data from brokers. On each update event:
+
+\begin{algorithm}
+\caption{Real-Time Exposure Update}
+\begin{algorithmic}[1]
+\State \textbf{Input:} New quote event (spot price $S'$ or option quote)
+\State Update spot price $S \leftarrow S'$
+\State Recalculate IV surface $\Sigma$ for expiration $T$ if option quote received
+\State Update live open interest if trade data available
+\For{each expiration $T$}
+    \For{each strike $K$}
+        \State $\sigma \leftarrow \text{getIVForStrike}(\Sigma, T, K)$
+        \State $\tau \leftarrow (T - \text{now}) / \text{MS\_PER\_YEAR}$
+        \State Compute $\Gamma, \text{Vanna}, \text{Charm}$ using updated $S, \sigma, \tau$
+        \State Compute $\text{GEX}_K, \text{VEX}_K, \text{CEX}_K$
+    \EndFor
+    \State Aggregate total exposures for expiration $T$
+\EndFor
+\State \textbf{Output:} Updated exposure metrics
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Live Open Interest Tracking}
+
+When intraday trade data is available, we estimate live open interest:
+
+\begin{align}
+\text{OI}_{\text{live}}(t) = \text{OI}_0 + \sum_{i=1}^{n} \delta_i
+\end{align}
+
+Where $\delta_i$ represents the estimated OI change from trade $i$, inferred by comparing trade price to NBBO:
+\begin{itemize}
+    \item Trade at ask $\Rightarrow$ buyer-initiated $\Rightarrow$ potential OI increase
+    \item Trade at bid $\Rightarrow$ seller-initiated $\Rightarrow$ potential OI decrease or close
+\end{itemize}
+
+\section{Shares Needed to Cover}
+
+To estimate the hedging flow required to neutralize dealer exposure:
+
+\begin{align}
+\text{Shares to Cover} &= \frac{-\text{Net Exposure}}{S} \\
+\text{Implied Move} &= \frac{\text{Shares to Cover}}{\text{Shares Outstanding}} \times 100\%
+\end{align}
+
+The sign indicates directional pressure:
+\begin{itemize}
+    \item Negative net exposure $\Rightarrow$ dealers must buy $\Rightarrow$ upward price pressure
+    \item Positive net exposure $\Rightarrow$ dealers must sell $\Rightarrow$ downward price pressure
+\end{itemize}
+
+\section{Minimum Broker Requirements}
+
+Note for this process to function effectively, brokers must provide a minimum:
+
+\begin{itemize}
+    \item Real-time streaming quotes for underlying and options
+    \item Open interest data before or at market open
+    \item Trade prints with timestamps to estimate live OI changes
+\end{itemize}
+
+\texttt{floe} itself could potentially be used to do the rest of all calculations: IV surface construction, Greeks calculation, exposure aggregation, and real-time updates.
+
+\section{Future Work}
+
+\begin{itemize}
+    \item Explore concepts of instantaneous local hedge pressure by net exposure at nearest price and how price velocity impacts immediate dealer hedging needs.
+    \item Improve nuances of live open interest estimation by weighing the confidence of each change in OI by how far the trade price is from the mid. Trades clearly at the bid or ask have higher signal; trades near mid price are ambiguous as to aggressor side.
+\end{itemize}
+
+\section{Summary}
+
+The complete pipeline for real-time dealer exposure calculation:
+
+\begin{enumerate}
+    \item \textbf{Initialize}: Fetch option chain with $\text{OI}_0$ at market open
+    \item \textbf{Build IV Surface}: Calculate IV for each option, apply total variance smoothing
+    \item \textbf{Compute Greeks}: For each option using smoothed IV and current spot
+    \item \textbf{Aggregate Exposures}: Calculate GEX, VEX, CEX, and sum them for NEX across strikes per expiration
+    \item \textbf{Stream Updates}: On each new quote, recalculate IV $\rightarrow$ Greeks $\rightarrow$ Exposures
+    \item \textbf{Track Live OI}: Adjust open interest based on observed trades
+\end{enumerate}
+
+This methodology enables sub-second exposure updates, providing actionable insight into market-maker hedging dynamics as market conditions evolve.
+
+\end{document}
+
+% Appendix with repository link
+\appendix
+\section{Repository}
+
+For the full source, examples, and license, see the project repository: \href{https://github.com/FullStackCraft/floe}{https://github.com/FullStackCraft/floe}.
