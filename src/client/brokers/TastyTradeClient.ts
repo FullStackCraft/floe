@@ -1,5 +1,20 @@
 import { NormalizedOption, NormalizedTicker, OptionType } from '../../types';
 import { parseOCCSymbol } from '../../utils/occ';
+import {
+  BaseBrokerClient,
+  BaseBrokerClientOptions,
+  AggressorSide,
+  IntradayTrade,
+  FlowSummary,
+  BrokerClientEventType,
+  BrokerEventListener,
+  OCC_OPTION_PATTERN,
+} from './BaseBrokerClient';
+
+// Re-export types for backwards compatibility
+export { AggressorSide, IntradayTrade, FlowSummary };
+export type TastyTradeClientEventType = BrokerClientEventType;
+export type TastyTradeEventListener<T> = BrokerEventListener<T>;
 
 // ==================== DxLink Protocol Types ====================
 
@@ -195,48 +210,6 @@ interface TastyTradeOptionChainResponse {
 }
 
 /**
- * Aggressor side of a trade
- */
-export type AggressorSide = 'buy' | 'sell' | 'unknown';
-
-/**
- * Intraday trade information with aggressor classification
- */
-export interface IntradayTrade {
-  /** OCC option symbol */
-  occSymbol: string;
-  /** Trade price */
-  price: number;
-  /** Trade size (number of contracts) */
-  size: number;
-  /** Bid at time of trade */
-  bid: number;
-  /** Ask at time of trade */
-  ask: number;
-  /** Aggressor side determined from price vs NBBO */
-  aggressorSide: AggressorSide;
-  /** Timestamp of the trade */
-  timestamp: number;
-  /** Estimated OI change */
-  estimatedOIChange: number;
-}
-
-/**
- * Event types emitted by TastyTradeClient
- */
-type TastyTradeClientEventType = 'tickerUpdate' | 'optionUpdate' | 'optionTrade' | 'connected' | 'disconnected' | 'error';
-
-/**
- * Event listener callback type
- */
-type TastyTradeEventListener<T> = (data: T) => void;
-
-/**
- * Regex pattern to identify OCC option symbols
- */
-const OCC_OPTION_PATTERN = /^.{1,6}\d{6}[CP]\d{8}$/;
-
-/**
  * Event field configurations for different event types
  */
 const FEED_EVENT_FIELDS = {
@@ -247,6 +220,16 @@ const FEED_EVENT_FIELDS = {
   Profile: ['eventType', 'eventSymbol', 'description', 'shortSaleRestriction', 'tradingStatus', 'statusReason', 'haltStartTime', 'haltEndTime', 'highLimitPrice', 'lowLimitPrice', 'high52WeekPrice', 'low52WeekPrice'],
   Summary: ['eventType', 'eventSymbol', 'openInterest', 'dayOpenPrice', 'dayHighPrice', 'dayLowPrice', 'prevDayClosePrice'],
 };
+
+/**
+ * TastyTrade client configuration options
+ */
+export interface TastyTradeClientOptions extends BaseBrokerClientOptions {
+  /** TastyTrade session token (required) */
+  sessionToken: string;
+  /** Whether to use sandbox environment (default: false) */
+  sandbox?: boolean;
+}
 
 /**
  * TastyTradeClient handles real-time streaming connections to the TastyTrade API
@@ -276,7 +259,9 @@ const FEED_EVENT_FIELDS = {
  * client.subscribe(['SPY', '.SPXW231215C4500']); // Equity and option
  * ```
  */
-export class TastyTradeClient {
+export class TastyTradeClient extends BaseBrokerClient {
+  protected readonly brokerName = 'TastyTrade';
+
   /** TastyTrade session token */
   private sessionToken: string;
 
@@ -301,44 +286,17 @@ export class TastyTradeClient {
   /** Feed channel opened */
   private feedChannelOpened: boolean = false;
 
-  /** Currently subscribed symbols */
-  private subscribedSymbols: Set<string> = new Set();
-
   /** Map from streamer symbol to OCC symbol */
   private streamerToOccMap: Map<string, string> = new Map();
 
   /** Map from OCC symbol to streamer symbol */
   private occToStreamerMap: Map<string, string> = new Map();
 
-  /** Cached ticker data */
-  private tickerCache: Map<string, NormalizedTicker> = new Map();
-
-  /** Cached option data */
-  private optionCache: Map<string, NormalizedOption> = new Map();
-
-  /** Base open interest from REST API */
-  private baseOpenInterest: Map<string, number> = new Map();
-
-  /** Cumulative estimated OI change from intraday trades */
-  private cumulativeOIChange: Map<string, number> = new Map();
-
-  /** History of intraday trades */
-  private intradayTrades: Map<string, IntradayTrade[]> = new Map();
-
-  /** Event listeners */
-  private eventListeners: Map<TastyTradeClientEventType, Set<TastyTradeEventListener<any>>> = new Map();
-
-  /** Reconnection attempt counter */
-  private reconnectAttempts: number = 0;
-
-  /** Maximum reconnection attempts */
-  private readonly maxReconnectAttempts: number = 5;
-
-  /** Reconnection delay in ms */
-  private readonly baseReconnectDelay: number = 1000;
-
   /** Keepalive interval handle */
   private keepaliveInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Whether the first UNAUTHORIZED message has been handled yet - prevents incorrect handling of 'true' UNAUTHORIZED messages */
+  private firstUnauthorizedMessageHandled: boolean = false;
 
   /** Keepalive timeout in seconds */
   private readonly keepaliveTimeoutSeconds: number = 60;
@@ -349,9 +307,6 @@ export class TastyTradeClient {
   /** Whether to use sandbox environment */
   private readonly sandbox: boolean;
 
-  /** Whether to log verbose debug information */
-  private readonly verbose: boolean;
-
   /**
    * Creates a new TastyTradeClient instance.
    * 
@@ -360,25 +315,13 @@ export class TastyTradeClient {
    * @param options.sandbox - Whether to use sandbox environment (default: false)
    * @param options.verbose - Whether to log verbose debug information (default: false)
    */
-  constructor(options: {
-    sessionToken: string;
-    sandbox?: boolean;
-    verbose?: boolean;
-  }) {
+  constructor(options: TastyTradeClientOptions) {
+    super(options);
     this.sessionToken = options.sessionToken;
     this.sandbox = options.sandbox ?? false;
-    this.verbose = options.verbose ?? false;
     this.apiBaseUrl = this.sandbox 
       ? 'https://api.cert.tastyworks.com'
       : 'https://api.tastyworks.com';
-
-    // Initialize event listener maps
-    this.eventListeners.set('tickerUpdate', new Set());
-    this.eventListeners.set('optionUpdate', new Set());
-    this.eventListeners.set('optionTrade', new Set());
-    this.eventListeners.set('connected', new Set());
-    this.eventListeners.set('disconnected', new Set());
-    this.eventListeners.set('error', new Set());
   }
 
   // ==================== Static Factory Methods ====================
@@ -649,100 +592,6 @@ export class TastyTradeClient {
     await Promise.all(fetchPromises);
   }
 
-  /**
-   * Returns cached option data for a symbol.
-   */
-  getOption(occSymbol: string): NormalizedOption | undefined {
-    return this.optionCache.get(occSymbol);
-  }
-
-  /**
-   * Returns all cached options.
-   */
-  getAllOptions(): Map<string, NormalizedOption> {
-    return new Map(this.optionCache);
-  }
-
-  /**
-   * Registers an event listener.
-   */
-  on<T>(event: TastyTradeClientEventType, listener: TastyTradeEventListener<T>): this {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.add(listener);
-    }
-    return this;
-  }
-
-  /**
-   * Removes an event listener.
-   */
-  off<T>(event: TastyTradeClientEventType, listener: TastyTradeEventListener<T>): this {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.delete(listener);
-    }
-    return this;
-  }
-
-  /**
-   * Returns intraday trades for an option.
-   */
-  getIntradayTrades(occSymbol: string): IntradayTrade[] {
-    return this.intradayTrades.get(occSymbol) ?? [];
-  }
-
-  /**
-   * Returns flow summary for an option.
-   */
-  getFlowSummary(occSymbol: string): {
-    buyVolume: number;
-    sellVolume: number;
-    unknownVolume: number;
-    netOIChange: number;
-    tradeCount: number;
-  } {
-    const trades = this.intradayTrades.get(occSymbol) ?? [];
-    
-    let buyVolume = 0;
-    let sellVolume = 0;
-    let unknownVolume = 0;
-    
-    for (const trade of trades) {
-      switch (trade.aggressorSide) {
-        case 'buy':
-          buyVolume += trade.size;
-          break;
-        case 'sell':
-          sellVolume += trade.size;
-          break;
-        case 'unknown':
-          unknownVolume += trade.size;
-          break;
-      }
-    }
-    
-    return {
-      buyVolume,
-      sellVolume,
-      unknownVolume,
-      netOIChange: this.cumulativeOIChange.get(occSymbol) ?? 0,
-      tradeCount: trades.length,
-    };
-  }
-
-  /**
-   * Resets intraday tracking data.
-   */
-  resetIntradayData(occSymbols?: string[]): void {
-    const symbolsToReset = occSymbols ?? Array.from(this.intradayTrades.keys());
-    
-    for (const symbol of symbolsToReset) {
-      this.intradayTrades.delete(symbol);
-      this.cumulativeOIChange.set(symbol, 0);
-    }
-  }
-
   // ==================== Private Methods ====================
 
   /**
@@ -896,7 +745,7 @@ export class TastyTradeClient {
 
     for (const symbol of symbols) {
       const streamerSymbol = this.getStreamerSymbol(symbol);
-      const isOption = this.isOptionSymbol(symbol) || streamerSymbol.startsWith('.');
+      const isOption = this.isTastyTradeOptionSymbol(symbol) || streamerSymbol.startsWith('.');
 
       if (isOption) {
         // Subscribe to option-relevant events
@@ -943,7 +792,7 @@ export class TastyTradeClient {
     }
 
     // If it's an OCC option symbol, try to convert
-    if (this.isOptionSymbol(symbol)) {
+    if (this.isTastyTradeOptionSymbol(symbol)) {
       try {
         const parsed = parseOCCSymbol(symbol);
         // TastyTrade streamer format: .UNDERLYING + YYMMDD + C/P + STRIKE
@@ -1036,8 +885,7 @@ export class TastyTradeClient {
 
       switch (message.type) {
         case 'SETUP':
-          // Server acknowledged setup, send auth
-          this.sendAuth();
+          // no op; the server will send it's own first AUTH_STATE UNAUTHORIZED message right after
           break;
 
         case 'AUTH_STATE':
@@ -1079,7 +927,16 @@ export class TastyTradeClient {
    * Handles AUTH_STATE message.
    */
   private handleAuthState(message: DxLinkAuthStateMessage, connectResolve?: (value: void) => void): void {
-    if (message.state === 'AUTHORIZED') {
+    // the first message we get back (after SETUP response) is an UNAUTHORIZED state
+    // this is an expected part of the flow (though unintuitive)
+    // see https://developer.tastytrade.com/streaming-market-data/#dxlink-streamer
+    if (!this.firstUnauthorizedMessageHandled && message.state === 'UNAUTHORIZED') {
+      // Server acknowledged setup, send auth
+      this.sendAuth();
+      this.firstUnauthorizedMessageHandled = true;
+    }
+    // once we are authorized, we can proceed as normal
+    else if (message.state === 'AUTHORIZED') {
       this.authorized = true;
       this.startKeepalive();
       this.openFeedChannel();
@@ -1088,8 +945,17 @@ export class TastyTradeClient {
       }
       this.emit('connected', undefined);
       connectResolve?.();
-    } else {
-      this.emit('error', new Error('DxLink authorization failed'));
+    } 
+    // a true unauthorized message after being authorized indicates a problem
+    else if (message.state === 'UNAUTHORIZED' && this.authorized) {
+      this.authorized = false;
+      this.emit('error', new Error('DxLink authorization lost'));
+      this.disconnect();
+      this.attemptReconnect();
+    }
+    else {
+      console.log('[TastyTrade:DxLink] Received unknown AUTH_STATE message:', message);
+      this.emit('error', new Error('Unknown AUTH_STATE message state'));
     }
   }
 
@@ -1127,6 +993,11 @@ export class TastyTradeClient {
    * Processes a single event from FEED_DATA.
    */
   private processEventData(eventType: string, values: (string | number | null)[]): void {
+    // for debugging summary events (if verbose)
+    if (eventType === 'Summary' && this.verbose) {
+      console.log(`[TastyTrade:DEBUG] Summary raw values:`, values);
+    }
+    
     // Values are in order of acceptEventFields
     const fields = FEED_EVENT_FIELDS[eventType as keyof typeof FEED_EVENT_FIELDS];
     if (!fields) return;
@@ -1266,22 +1137,7 @@ export class TastyTradeClient {
     askSize: number,
     timestamp: number
   ): void {
-    const existing = this.tickerCache.get(symbol);
-
-    const ticker: NormalizedTicker = {
-      symbol,
-      spot: bidPrice > 0 && askPrice > 0 ? (bidPrice + askPrice) / 2 : existing?.spot ?? 0,
-      bid: bidPrice,
-      bidSize,
-      ask: askPrice,
-      askSize,
-      last: existing?.last ?? 0,
-      volume: existing?.volume ?? 0,
-      timestamp,
-    };
-
-    this.tickerCache.set(symbol, ticker);
-    this.emit('tickerUpdate', ticker);
+    this.updateTickerFromQuoteData(symbol, bidPrice, bidSize, askPrice, askSize, timestamp);
   }
 
   /**
@@ -1294,22 +1150,7 @@ export class TastyTradeClient {
     dayVolume: number,
     timestamp: number
   ): void {
-    const existing = this.tickerCache.get(symbol);
-
-    const ticker: NormalizedTicker = {
-      symbol,
-      spot: existing?.spot ?? price,
-      bid: existing?.bid ?? 0,
-      bidSize: existing?.bidSize ?? 0,
-      ask: existing?.ask ?? 0,
-      askSize: existing?.askSize ?? 0,
-      last: price,
-      volume: dayVolume > 0 ? dayVolume : (existing?.volume ?? 0) + size,
-      timestamp,
-    };
-
-    this.tickerCache.set(symbol, ticker);
-    this.emit('tickerUpdate', ticker);
+    this.updateTickerFromTradeData(symbol, price, size, dayVolume > 0 ? dayVolume : null, timestamp);
   }
 
   /**
@@ -1323,45 +1164,7 @@ export class TastyTradeClient {
     askSize: number,
     timestamp: number
   ): void {
-    const existing = this.optionCache.get(occSymbol);
-
-    // Parse OCC symbol if we don't have existing data
-    let parsed: { symbol: string; expiration: Date; optionType: OptionType; strike: number };
-    try {
-      parsed = parseOCCSymbol(occSymbol);
-    } catch {
-      // Try to use existing data or skip
-      if (!existing) return;
-      parsed = {
-        symbol: existing.underlying,
-        expiration: new Date(existing.expirationTimestamp),
-        optionType: existing.optionType,
-        strike: existing.strike,
-      };
-    }
-
-    const option: NormalizedOption = {
-      occSymbol,
-      underlying: parsed.symbol,
-      strike: parsed.strike,
-      expiration: parsed.expiration.toISOString().split('T')[0],
-      expirationTimestamp: parsed.expiration.getTime(),
-      optionType: parsed.optionType,
-      bid: bidPrice,
-      bidSize,
-      ask: askPrice,
-      askSize,
-      mark: bidPrice > 0 && askPrice > 0 ? (bidPrice + askPrice) / 2 : existing?.mark ?? 0,
-      last: existing?.last ?? 0,
-      volume: existing?.volume ?? 0,
-      openInterest: existing?.openInterest ?? 0,
-      liveOpenInterest: this.calculateLiveOpenInterest(occSymbol),
-      impliedVolatility: existing?.impliedVolatility ?? 0,
-      timestamp,
-    };
-
-    this.optionCache.set(occSymbol, option);
-    this.emit('optionUpdate', option);
+    this.updateOptionFromQuoteData(occSymbol, bidPrice, bidSize, askPrice, askSize, timestamp, parseOCCSymbol);
   }
 
   /**
@@ -1374,116 +1177,7 @@ export class TastyTradeClient {
     dayVolume: number,
     timestamp: number
   ): void {
-    const existing = this.optionCache.get(occSymbol);
-
-    // Parse OCC symbol
-    let parsed: { symbol: string; expiration: Date; optionType: OptionType; strike: number };
-    try {
-      parsed = parseOCCSymbol(occSymbol);
-    } catch {
-      if (!existing) return;
-      parsed = {
-        symbol: existing.underlying,
-        expiration: new Date(existing.expirationTimestamp),
-        optionType: existing.optionType,
-        strike: existing.strike,
-      };
-    }
-
-    // Determine aggressor side
-    const bid = existing?.bid ?? 0;
-    const ask = existing?.ask ?? 0;
-    const aggressorSide = this.determineAggressorSide(price, bid, ask);
-
-    // Calculate OI change
-    const estimatedOIChange = this.calculateOIChangeFromTrade(aggressorSide, size, parsed.optionType);
-    const currentChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
-    this.cumulativeOIChange.set(occSymbol, currentChange + estimatedOIChange);
-    
-    if (this.verbose && estimatedOIChange !== 0) {
-      const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
-      const newLiveOI = Math.max(0, baseOI + currentChange + estimatedOIChange);
-      console.log(`[TastyTrade:OI] ${occSymbol} trade: price=${price.toFixed(2)}, size=${size}, aggressor=${aggressorSide}, OI change=${estimatedOIChange > 0 ? '+' : ''}${estimatedOIChange}, liveOI=${newLiveOI} (base=${baseOI}, cumulative=${currentChange + estimatedOIChange})`);
-    }
-
-    // Record trade
-    const trade: IntradayTrade = {
-      occSymbol,
-      price,
-      size,
-      bid,
-      ask,
-      aggressorSide,
-      timestamp,
-      estimatedOIChange,
-    };
-
-    if (!this.intradayTrades.has(occSymbol)) {
-      this.intradayTrades.set(occSymbol, []);
-    }
-    this.intradayTrades.get(occSymbol)!.push(trade);
-    this.emit('optionTrade', trade);
-
-    const option: NormalizedOption = {
-      occSymbol,
-      underlying: parsed.symbol,
-      strike: parsed.strike,
-      expiration: parsed.expiration.toISOString().split('T')[0],
-      expirationTimestamp: parsed.expiration.getTime(),
-      optionType: parsed.optionType,
-      bid,
-      bidSize: existing?.bidSize ?? 0,
-      ask,
-      askSize: existing?.askSize ?? 0,
-      mark: bid > 0 && ask > 0 ? (bid + ask) / 2 : price,
-      last: price,
-      volume: dayVolume > 0 ? dayVolume : (existing?.volume ?? 0) + size,
-      openInterest: existing?.openInterest ?? 0,
-      liveOpenInterest: this.calculateLiveOpenInterest(occSymbol),
-      impliedVolatility: existing?.impliedVolatility ?? 0,
-      timestamp,
-    };
-
-    this.optionCache.set(occSymbol, option);
-    this.emit('optionUpdate', option);
-  }
-
-  /**
-   * Determines aggressor side from trade price vs NBBO.
-   */
-  private determineAggressorSide(tradePrice: number, bid: number, ask: number): AggressorSide {
-    if (bid <= 0 || ask <= 0) return 'unknown';
-    
-    const spread = ask - bid;
-    const tolerance = spread > 0 ? spread * 0.001 : 0.001;
-
-    if (tradePrice >= ask - tolerance) {
-      return 'buy';
-    } else if (tradePrice <= bid + tolerance) {
-      return 'sell';
-    }
-    return 'unknown';
-  }
-
-  /**
-   * Calculates estimated OI change from trade.
-   */
-  private calculateOIChangeFromTrade(
-    aggressorSide: AggressorSide,
-    size: number,
-    _optionType: OptionType
-  ): number {
-    if (aggressorSide === 'unknown') return 0;
-    return aggressorSide === 'buy' ? size : -size;
-  }
-
-  /**
-   * Calculates live open interest.
-   */
-  private calculateLiveOpenInterest(occSymbol: string): number {
-    const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
-    const cumulativeChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
-    return Math.max(0, baseOI + cumulativeChange);
+    this.updateOptionFromTradeData(occSymbol, price, size, dayVolume > 0 ? dayVolume : null, timestamp, parseOCCSymbol);
   }
 
   /**
@@ -1503,11 +1197,9 @@ export class TastyTradeClient {
     }
 
     this.reconnectAttempts++;
-    const delay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    const delay = this.getReconnectDelay();
 
-    if (this.verbose) {
-      console.log(`[TastyTrade:DxLink] Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-    }
+    this.log(`Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
 
     await this.sleep(delay);
 
@@ -1519,9 +1211,9 @@ export class TastyTradeClient {
   }
 
   /**
-   * Checks if symbol is an OCC option symbol.
+   * Checks if symbol is a TastyTrade option symbol.
    */
-  private isOptionSymbol(symbol: string): boolean {
+  private isTastyTradeOptionSymbol(symbol: string): boolean {
     return OCC_OPTION_PATTERN.test(symbol);
   }
 
@@ -1532,38 +1224,5 @@ export class TastyTradeClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     }
-  }
-
-  /**
-   * Emits an event to all listeners.
-   */
-  private emit<T>(event: TastyTradeClientEventType, data: T): void {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.forEach(listener => {
-        try {
-          listener(data);
-        } catch (error) {
-          console.error('Event listener error:', error);
-        }
-      });
-    }
-  }
-
-  /**
-   * Converts value to number, handling NaN and null.
-   */
-  private toNumber(value: string | number | null | undefined): number {
-    if (value === null || value === undefined) return 0;
-    if (typeof value === 'number') return isNaN(value) ? 0 : value;
-    const num = parseFloat(value);
-    return isNaN(num) ? 0 : num;
-  }
-
-  /**
-   * Sleep utility.
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

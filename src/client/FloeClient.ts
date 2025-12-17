@@ -166,7 +166,7 @@ export class FloeClient {
                 // No action needed for NONE broker; no-op
                 break;
             case Broker.TRADIER:
-                this.tradierClient = new TradierClient(authToken, { verbose: this.verbose });
+                this.tradierClient = new TradierClient({ authToken, verbose: this.verbose });
                 
                 // Wire up TradierClient events to FloeClient events
                 this.tradierClient.on('tickerUpdate', (ticker: NormalizedTicker) => {

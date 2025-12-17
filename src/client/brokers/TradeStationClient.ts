@@ -1,5 +1,20 @@
 import { NormalizedOption, NormalizedTicker, OptionType } from '../../types';
 import { parseOCCSymbol } from '../../utils/occ';
+import {
+  BaseBrokerClient,
+  BaseBrokerClientOptions,
+  AggressorSide,
+  IntradayTrade,
+  FlowSummary,
+  BrokerClientEventType,
+  BrokerEventListener,
+  OCC_OPTION_PATTERN,
+} from './BaseBrokerClient';
+
+// Re-export types for backwards compatibility
+export { AggressorSide, IntradayTrade, FlowSummary };
+export type TradeStationClientEventType = BrokerClientEventType;
+export type TradeStationEventListener<T> = BrokerEventListener<T>;
 
 // ==================== TradeStation API Types ====================
 
@@ -159,53 +174,24 @@ interface TradeStationSymbolDetails {
 }
 
 /**
- * Aggressor side of a trade
- */
-export type AggressorSide = 'buy' | 'sell' | 'unknown';
-
-/**
- * Intraday trade information with aggressor classification
- */
-export interface IntradayTrade {
-  /** OCC option symbol */
-  occSymbol: string;
-  /** Trade price */
-  price: number;
-  /** Trade size (number of contracts) */
-  size: number;
-  /** Bid at time of trade */
-  bid: number;
-  /** Ask at time of trade */
-  ask: number;
-  /** Aggressor side determined from price vs NBBO */
-  aggressorSide: AggressorSide;
-  /** Timestamp of the trade */
-  timestamp: number;
-  /** Estimated OI change */
-  estimatedOIChange: number;
-}
-
-/**
- * Event types emitted by TradeStationClient
- */
-type TradeStationClientEventType = 'tickerUpdate' | 'optionUpdate' | 'optionTrade' | 'connected' | 'disconnected' | 'error';
-
-/**
- * Event listener callback type
- */
-type TradeStationEventListener<T> = (data: T) => void;
-
-/**
  * Regex pattern to identify TradeStation option symbols
  * TradeStation uses space-padded format: "MSFT 220916C305"
  */
 const TS_OPTION_PATTERN = /^[A-Z]+\s+\d{6}[CP]\d+(\.\d+)?$/;
 
 /**
- * Regex pattern to identify OCC option symbols
- * Format: ROOT + YYMMDD + C/P + 8-digit strike
+ * TradeStation client configuration options
  */
-const OCC_OPTION_PATTERN = /^.{1,6}\d{6}[CP]\d{8}$/;
+export interface TradeStationClientOptions extends BaseBrokerClientOptions {
+  /** TradeStation OAuth access token (required) */
+  accessToken: string;
+  /** OAuth refresh token for automatic token renewal */
+  refreshToken?: string;
+  /** Whether to use simulation environment (default: false) */
+  simulation?: boolean;
+  /** Callback when token is refreshed */
+  onTokenRefresh?: (newToken: string) => void;
+}
 
 /**
  * TradeStationClient handles real-time streaming connections to the TradeStation API
@@ -234,7 +220,9 @@ const OCC_OPTION_PATTERN = /^.{1,6}\d{6}[CP]\d{8}$/;
  * client.subscribe(['MSFT', 'AAPL']);
  * ```
  */
-export class TradeStationClient {
+export class TradeStationClient extends BaseBrokerClient {
+  protected readonly brokerName = 'TradeStation';
+
   /** TradeStation OAuth access token */
   private accessToken: string;
 
@@ -250,33 +238,6 @@ export class TradeStationClient {
   /** Active AbortControllers for streams */
   private activeStreams: Map<string, AbortController> = new Map();
 
-  /** Cached ticker data */
-  private tickerCache: Map<string, NormalizedTicker> = new Map();
-
-  /** Cached option data */
-  private optionCache: Map<string, NormalizedOption> = new Map();
-
-  /** Base open interest from REST API */
-  private baseOpenInterest: Map<string, number> = new Map();
-
-  /** Cumulative estimated OI change from intraday trades */
-  private cumulativeOIChange: Map<string, number> = new Map();
-
-  /** History of intraday trades */
-  private intradayTrades: Map<string, IntradayTrade[]> = new Map();
-
-  /** Event listeners */
-  private eventListeners: Map<TradeStationClientEventType, Set<TradeStationEventListener<any>>> = new Map();
-
-  /** Reconnection attempt counter */
-  private reconnectAttempts: number = 0;
-
-  /** Maximum reconnection attempts */
-  private readonly maxReconnectAttempts: number = 5;
-
-  /** Reconnection delay in ms */
-  private readonly baseReconnectDelay: number = 1000;
-
   /** TradeStation API base URL */
   private readonly apiBaseUrl: string = 'https://api.tradestation.com/v3';
 
@@ -289,9 +250,6 @@ export class TradeStationClient {
   /** Token refresh callback */
   private onTokenRefresh: ((newToken: string) => void) | null = null;
 
-  /** Whether to log verbose debug information */
-  private readonly verbose: boolean;
-
   /**
    * Creates a new TradeStationClient instance.
    * 
@@ -302,26 +260,12 @@ export class TradeStationClient {
    * @param options.onTokenRefresh - Callback when token is refreshed
    * @param options.verbose - Whether to log verbose debug information (default: false)
    */
-  constructor(options: {
-    accessToken: string;
-    refreshToken?: string;
-    simulation?: boolean;
-    onTokenRefresh?: (newToken: string) => void;
-    verbose?: boolean;
-  }) {
+  constructor(options: TradeStationClientOptions) {
+    super(options);
     this.accessToken = options.accessToken;
     this.refreshToken = options.refreshToken ?? null;
     this.simulation = options.simulation ?? false;
     this.onTokenRefresh = options.onTokenRefresh ?? null;
-    this.verbose = options.verbose ?? false;
-
-    // Initialize event listener maps
-    this.eventListeners.set('tickerUpdate', new Set());
-    this.eventListeners.set('optionUpdate', new Set());
-    this.eventListeners.set('optionTrade', new Set());
-    this.eventListeners.set('connected', new Set());
-    this.eventListeners.set('disconnected', new Set());
-    this.eventListeners.set('error', new Set());
   }
 
   // ==================== Public API ====================
@@ -397,7 +341,7 @@ export class TradeStationClient {
     const options: string[] = [];
 
     for (const symbol of symbols) {
-      if (this.isOptionSymbol(symbol)) {
+      if (this.isTradeStationOptionSymbol(symbol)) {
         options.push(symbol);
         this.subscribedOptions.add(symbol);
       } else {
@@ -429,7 +373,7 @@ export class TradeStationClient {
     const optionsToRemove: string[] = [];
 
     for (const symbol of symbols) {
-      if (this.isOptionSymbol(symbol)) {
+      if (this.isTradeStationOptionSymbol(symbol)) {
         this.subscribedOptions.delete(symbol);
         optionsToRemove.push(symbol);
       } else {
@@ -597,118 +541,29 @@ export class TradeStationClient {
   }
 
   /**
-   * Returns cached option data for a symbol.
-   */
-  getOption(occSymbol: string): NormalizedOption | undefined {
-    return this.optionCache.get(occSymbol);
-  }
-
-  /**
-   * Returns all cached options.
-   */
-  getAllOptions(): Map<string, NormalizedOption> {
-    return new Map(this.optionCache);
-  }
-
-  /**
-   * Returns cached ticker data for a symbol.
-   */
-  getTicker(symbol: string): NormalizedTicker | undefined {
-    return this.tickerCache.get(symbol);
-  }
-
-  /**
-   * Returns all cached tickers.
-   */
-  getAllTickers(): Map<string, NormalizedTicker> {
-    return new Map(this.tickerCache);
-  }
-
-  /**
-   * Registers an event listener.
-   */
-  on<T>(event: TradeStationClientEventType, listener: TradeStationEventListener<T>): this {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.add(listener);
-    }
-    return this;
-  }
-
-  /**
-   * Removes an event listener.
-   */
-  off<T>(event: TradeStationClientEventType, listener: TradeStationEventListener<T>): this {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.delete(listener);
-    }
-    return this;
-  }
-
-  /**
-   * Returns intraday trades for an option.
-   */
-  getIntradayTrades(occSymbol: string): IntradayTrade[] {
-    return this.intradayTrades.get(occSymbol) ?? [];
-  }
-
-  /**
-   * Returns flow summary for an option.
-   */
-  getFlowSummary(occSymbol: string): {
-    buyVolume: number;
-    sellVolume: number;
-    unknownVolume: number;
-    netOIChange: number;
-    tradeCount: number;
-  } {
-    const trades = this.intradayTrades.get(occSymbol) ?? [];
-    
-    let buyVolume = 0;
-    let sellVolume = 0;
-    let unknownVolume = 0;
-    
-    for (const trade of trades) {
-      switch (trade.aggressorSide) {
-        case 'buy':
-          buyVolume += trade.size;
-          break;
-        case 'sell':
-          sellVolume += trade.size;
-          break;
-        case 'unknown':
-          unknownVolume += trade.size;
-          break;
-      }
-    }
-    
-    return {
-      buyVolume,
-      sellVolume,
-      unknownVolume,
-      netOIChange: this.cumulativeOIChange.get(occSymbol) ?? 0,
-      tradeCount: trades.length,
-    };
-  }
-
-  /**
-   * Resets intraday tracking data.
-   */
-  resetIntradayData(occSymbols?: string[]): void {
-    const symbolsToReset = occSymbols ?? Array.from(this.intradayTrades.keys());
-    
-    for (const symbol of symbolsToReset) {
-      this.intradayTrades.delete(symbol);
-      this.cumulativeOIChange.set(symbol, 0);
-    }
-  }
-
-  /**
    * Updates the access token (for token refresh scenarios).
    */
   updateAccessToken(newToken: string): void {
     this.accessToken = newToken;
+  }
+
+  /**
+   * Fetches open interest and other static data for subscribed options.
+   * 
+   * @param occSymbols - Array of OCC option symbols to fetch data for
+   * 
+   * @remarks
+   * TradeStation provides open interest via the streaming option quotes.
+   * This method is a no-op placeholder to satisfy the abstract interface.
+   * OI data will be populated automatically through the streaming connection.
+   */
+  async fetchOpenInterest(occSymbols: string[]): Promise<void> {
+    // TradeStation provides OI through the option quote stream
+    // The subscribedOptions will receive OI data automatically
+    // This is a no-op to satisfy the abstract method requirement
+    if (this.verbose) {
+      console.log(`[TradeStation] fetchOpenInterest called for ${occSymbols.length} symbols - data comes via stream`);
+    }
   }
 
   // ==================== Private Methods ====================
@@ -1014,19 +869,19 @@ export class TradeStationClient {
    * Normalizes TradeStation quote to NormalizedTicker.
    */
   private normalizeQuote(quote: TradeStationQuoteStream): NormalizedTicker {
-    const bid = this.parseNumber(quote.Bid);
-    const ask = this.parseNumber(quote.Ask);
-    const last = this.parseNumber(quote.Last);
+    const bid = this.toNumber(quote.Bid);
+    const ask = this.toNumber(quote.Ask);
+    const last = this.toNumber(quote.Last);
 
     return {
       symbol: quote.Symbol,
       spot: bid > 0 && ask > 0 ? (bid + ask) / 2 : last,
       bid,
-      bidSize: this.parseNumber(quote.BidSize),
+      bidSize: this.toNumber(quote.BidSize),
       ask,
-      askSize: this.parseNumber(quote.AskSize),
+      askSize: this.toNumber(quote.AskSize),
       last,
-      volume: this.parseNumber(quote.Volume),
+      volume: this.toNumber(quote.Volume),
       timestamp: quote.TradeTime ? new Date(quote.TradeTime).getTime() : Date.now(),
     };
   }
@@ -1059,9 +914,9 @@ export class TradeStationClient {
       };
     }
 
-    const bid = this.parseNumber(data.Bid);
-    const ask = this.parseNumber(data.Ask);
-    const last = this.parseNumber(data.Last);
+    const bid = this.toNumber(data.Bid);
+    const ask = this.toNumber(data.Ask);
+    const last = this.toNumber(data.Last);
     const existingOI = this.baseOpenInterest.get(occSymbol) ?? 0;
 
     return {
@@ -1080,7 +935,7 @@ export class TradeStationClient {
       volume: data.Volume ?? 0,
       openInterest: data.DailyOpenInterest ?? leg.OpenInterest ?? existingOI,
       liveOpenInterest: this.calculateLiveOpenInterest(occSymbol),
-      impliedVolatility: this.parseNumber(data.ImpliedVolatility),
+      impliedVolatility: this.toNumber(data.ImpliedVolatility),
       timestamp: Date.now(),
     };
   }
@@ -1143,80 +998,9 @@ export class TradeStationClient {
   }
 
   /**
-   * Determines aggressor side from trade price vs NBBO.
+   * Checks if a symbol is an option symbol (TradeStation or OCC format).
    */
-  private determineAggressorSide(tradePrice: number, bid: number, ask: number): AggressorSide {
-    if (bid <= 0 || ask <= 0) return 'unknown';
-    
-    const spread = ask - bid;
-    const tolerance = spread > 0 ? spread * 0.001 : 0.001;
-
-    if (tradePrice >= ask - tolerance) {
-      return 'buy';
-    } else if (tradePrice <= bid + tolerance) {
-      return 'sell';
-    }
-    return 'unknown';
-  }
-
-  /**
-   * Calculates estimated OI change from trade.
-   */
-  private calculateOIChangeFromTrade(
-    aggressorSide: AggressorSide,
-    size: number,
-    _optionType: OptionType
-  ): number {
-    if (aggressorSide === 'unknown') return 0;
-    return aggressorSide === 'buy' ? size : -size;
-  }
-
-  /**
-   * Calculates live open interest.
-   */
-  private calculateLiveOpenInterest(occSymbol: string): number {
-    const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
-    const cumulativeChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
-    return Math.max(0, baseOI + cumulativeChange);
-  }
-
-  /**
-   * Checks if a symbol is an option symbol.
-   */
-  private isOptionSymbol(symbol: string): boolean {
+  private isTradeStationOptionSymbol(symbol: string): boolean {
     return TS_OPTION_PATTERN.test(symbol) || OCC_OPTION_PATTERN.test(symbol);
-  }
-
-  /**
-   * Parses a numeric string value.
-   */
-  private parseNumber(value: string | number | undefined | null): number {
-    if (value === undefined || value === null) return 0;
-    if (typeof value === 'number') return isNaN(value) ? 0 : value;
-    const num = parseFloat(value);
-    return isNaN(num) ? 0 : num;
-  }
-
-  /**
-   * Emits an event to all listeners.
-   */
-  private emit<T>(event: TradeStationClientEventType, data: T): void {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.forEach(listener => {
-        try {
-          listener(data);
-        } catch (error) {
-          console.error('Event listener error:', error);
-        }
-      });
-    }
-  }
-
-  /**
-   * Sleep utility.
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

@@ -2,7 +2,7 @@
 
 ![npm](https://img.shields.io/npm/v/@fullstackcraftllc/floe?style=flat-square) ![License](https://img.shields.io/npm/l/@fullstackcraftllc/floe?style=flat-square) ![TypeScript](https://img.shields.io/badge/TypeScript-4.9-blue?style=flat-square&logo=typescript)
 
-Zero-dependency TypeScript functions for options flow: Black-Scholes, Greeks, and dealer exposures, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.
+Zero-dependency TypeScript functions for options flow: Black-Scholes, greeks, dealer exposures, implied PDFs, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.
 
 The same library that is used in [Full Stack Craft's](https://fullstackcraft.com) various fintech products including [The Wheel Screener](https://wheelscreener.com), [LEAPS Screener](https://leapsscreener.com), [Option Screener](https://option-screener.com), [AMT JOY](https://amtjoy.com), and [VannaCharm](https://vannacharm.com).
 
@@ -84,15 +84,12 @@ By contributing, you agree that your contributions will be licensed under the sa
 
 ## TODOs
 
-- [ ] Implied PDF calculations
-- [ ] Tradier integration, normalization, and docs
-- [ ] TradeStation integration, normalization, and docs
-- [ ] Interactive Brokers integration, normalization, and docs
+- [X] Implied PDF calculations
+- [X] Tradier integration
+- [X] TradeStation integration
+- [ ] Interactive Brokers integration
+- [ ] Trading functionality with all brokers
 
 ## Credits
 
-Built with ❤️ by [Full Stack Craft LLC](https://fullstackcraft.com)
-
----
-
-**© 2025 Full Stack Craft LLC** - All rights reserved.
+Copyright © 2025 Built with ❤️ by [Full Stack Craft LLC](https://fullstackcraft.com)

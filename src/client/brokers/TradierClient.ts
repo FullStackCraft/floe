@@ -1,5 +1,20 @@
 import { NormalizedOption, NormalizedTicker, OptionType } from '../../types';
 import { parseOCCSymbol } from '../../utils/occ';
+import {
+  BaseBrokerClient,
+  BaseBrokerClientOptions,
+  AggressorSide,
+  IntradayTrade,
+  FlowSummary,
+  BrokerClientEventType,
+  BrokerEventListener,
+  OCC_OPTION_PATTERN,
+} from './BaseBrokerClient';
+
+// Re-export types for backwards compatibility
+export { AggressorSide, IntradayTrade, FlowSummary };
+export type TradierClientEventType = BrokerClientEventType;
+export type TradierEventListener<T> = BrokerEventListener<T>;
 
 /**
  * Tradier streaming session information returned from session creation endpoint
@@ -89,33 +104,6 @@ interface TradierTimesaleEvent {
 type TradierStreamEvent = TradierQuoteEvent | TradierTradeEvent | TradierSummaryEvent | TradierTimesaleEvent;
 
 /**
- * Aggressor side of a trade - determined by comparing trade price to NBBO
- */
-export type AggressorSide = 'buy' | 'sell' | 'unknown';
-
-/**
- * Intraday trade information with aggressor classification
- */
-export interface IntradayTrade {
-  /** OCC option symbol */
-  occSymbol: string;
-  /** Trade price */
-  price: number;
-  /** Trade size (number of contracts) */
-  size: number;
-  /** Bid at time of trade */
-  bid: number;
-  /** Ask at time of trade */
-  ask: number;
-  /** Aggressor side determined from price vs NBBO */
-  aggressorSide: AggressorSide;
-  /** Timestamp of the trade */
-  timestamp: number;
-  /** Estimated OI change: +size for buy aggressor (new longs), -size for sell aggressor (closing longs/new shorts) */
-  estimatedOIChange: number;
-}
-
-/**
  * Tradier option chain item from REST API
  * GET /v1/markets/options/chains
  */
@@ -179,22 +167,12 @@ interface TradierOptionsChainResponse {
 }
 
 /**
- * Event types emitted by TradierClient
+ * Tradier client configuration options
  */
-type TradierClientEventType = 'tickerUpdate' | 'optionUpdate' | 'optionTrade' | 'connected' | 'disconnected' | 'error';
-
-/**
- * Event listener callback type
- */
-type TradierEventListener<T> = (data: T) => void;
-
-/**
- * Regex pattern to identify OCC option symbols
- * Matches both compact format (e.g., AAPL230120C00150000) and 
- * padded format (e.g., 'AAPL  230120C00150000')
- * Pattern: 1-6 char root + YYMMDD + C/P + 8-digit strike
- */
-const OCC_OPTION_PATTERN = /^.{1,6}\d{6}[CP]\d{8}$/;
+export interface TradierClientOptions extends BaseBrokerClientOptions {
+  /** Tradier API authentication token */
+  authToken: string;
+}
 
 /**
  * TradierClient handles real-time streaming connections to the Tradier API.
@@ -206,7 +184,7 @@ const OCC_OPTION_PATTERN = /^.{1,6}\d{6}[CP]\d{8}$/;
  * 
  * @example
  * ```typescript
- * const client = new TradierClient('your-api-key');
+ * const client = new TradierClient({ authToken: 'your-api-key' });
  * 
  * client.on('tickerUpdate', (ticker) => {
  *   console.log(`${ticker.symbol}: ${ticker.spot}`);
@@ -216,7 +194,9 @@ const OCC_OPTION_PATTERN = /^.{1,6}\d{6}[CP]\d{8}$/;
  * client.subscribe(['QQQ', 'AAPL  240119C00500000']);
  * ```
  */
-export class TradierClient {
+export class TradierClient extends BaseBrokerClient {
+  protected readonly brokerName = 'Tradier';
+
   /** Tradier API authentication token */
   private authToken: string;
 
@@ -229,72 +209,22 @@ export class TradierClient {
   /** Connection state */
   private connected: boolean = false;
 
-  /** Currently subscribed symbols (tickers and options) */
-  private subscribedSymbols: Set<string> = new Set();
-
-  /** Cached ticker data (for merging quote and trade events) */
-  private tickerCache: Map<string, NormalizedTicker> = new Map();
-
-  /** Cached option data (for merging quote and trade events) */
-  private optionCache: Map<string, NormalizedOption> = new Map();
-
-  /** 
-   * Base open interest from REST API - used as t=0 reference for live OI calculation
-   * Key: OCC symbol, Value: open interest at start of day / time of fetch
-   */
-  private baseOpenInterest: Map<string, number> = new Map();
-
-  /**
-   * Cumulative estimated OI change from intraday trades
-   * Key: OCC symbol, Value: net estimated change (positive = more contracts opened)
-   */
-  private cumulativeOIChange: Map<string, number> = new Map();
-
-  /**
-   * History of intraday trades with aggressor classification
-   * Key: OCC symbol, Value: array of trades
-   */
-  private intradayTrades: Map<string, IntradayTrade[]> = new Map();
-
-  /** Event listeners */
-  private eventListeners: Map<TradierClientEventType, Set<TradierEventListener<any>>> = new Map();
-
-  /** Reconnection attempt counter */
-  private reconnectAttempts: number = 0;
-
-  /** Maximum reconnection attempts */
-  private readonly maxReconnectAttempts: number = 5;
-
-  /** Reconnection delay in ms (doubles with each attempt) */
-  private readonly baseReconnectDelay: number = 1000;
-
   /** Tradier API base URL */
   private readonly apiBaseUrl: string = 'https://api.tradier.com/v1';
 
   /** Tradier WebSocket URL */
   private readonly wsUrl: string = 'wss://ws.tradier.com/v1/markets/events';
 
-  /** Whether to log verbose debug information */
-  private readonly verbose: boolean;
-
   /**
    * Creates a new TradierClient instance.
    * 
-   * @param authToken - Tradier API auth token
-   * @param options - Optional configuration options
+   * @param options - Client configuration options
+   * @param options.authToken - Tradier API auth token (required)
    * @param options.verbose - Whether to log verbose debug information (default: false)
    */
-  constructor(authToken: string, options?: { verbose?: boolean }) {
-    this.authToken = authToken;
-    this.verbose = options?.verbose ?? false;
-
-    // Initialize event listener maps
-    this.eventListeners.set('tickerUpdate', new Set());
-    this.eventListeners.set('optionUpdate', new Set());
-    this.eventListeners.set('optionTrade', new Set());
-    this.eventListeners.set('connected', new Set());
-    this.eventListeners.set('disconnected', new Set());
-    this.eventListeners.set('error', new Set());
+  constructor(options: TradierClientOptions) {
+    super(options);
+    this.authToken = options.authToken;
   }
 
   // ==================== Public API ====================
@@ -566,53 +496,6 @@ export class TradierClient {
     await Promise.all(fetchPromises);
   }
 
-  /**
-   * Returns the cached option data for a symbol.
-   * 
-   * @param occSymbol - OCC option symbol
-   * @returns Cached option data or undefined
-   */
-  getOption(occSymbol: string): NormalizedOption | undefined {
-    return this.optionCache.get(occSymbol);
-  }
-
-  /**
-   * Returns all cached options.
-   * 
-   * @returns Map of OCC symbols to option data
-   */
-  getAllOptions(): Map<string, NormalizedOption> {
-    return new Map(this.optionCache);
-  }
-
-  /**
-   * Registers an event listener.
-   * 
-   * @param event - Event type to listen for
-   * @param listener - Callback function
-   */
-  on<T>(event: TradierClientEventType, listener: TradierEventListener<T>): this {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.add(listener);
-    }
-    return this;
-  }
-
-  /**
-   * Removes an event listener.
-   * 
-   * @param event - Event type
-   * @param listener - Callback function to remove
-   */
-  off<T>(event: TradierClientEventType, listener: TradierEventListener<T>): this {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.delete(listener);
-    }
-    return this;
-  }
-
   // ==================== Private Methods ====================
 
   /**
@@ -759,7 +642,7 @@ export class TradierClient {
   private handleQuoteEvent(event: TradierQuoteEvent): void {
     const { symbol } = event;
     const timestamp = parseInt(event.biddate, 10) || Date.now();
-    const isOption = this.isOptionSymbol(symbol);
+    const isOption = this.isTradierOptionSymbol(symbol);
 
     if (isOption) {
       this.updateOptionFromQuote(symbol, event, timestamp);
@@ -774,7 +657,7 @@ export class TradierClient {
   private handleTradeEvent(event: TradierTradeEvent): void {
     const { symbol } = event;
     const timestamp = parseInt(event.date, 10) || Date.now();
-    const isOption = this.isOptionSymbol(symbol);
+    const isOption = this.isTradierOptionSymbol(symbol);
 
     if (isOption) {
       this.updateOptionFromTrade(symbol, event, timestamp);
@@ -790,7 +673,7 @@ export class TradierClient {
   private handleTimesaleEvent(event: TradierTimesaleEvent): void {
     const { symbol } = event;
     const timestamp = parseInt(event.date, 10) || Date.now();
-    const isOption = this.isOptionSymbol(symbol);
+    const isOption = this.isTradierOptionSymbol(symbol);
 
     if (isOption) {
       this.updateOptionFromTimesale(symbol, event, timestamp);
@@ -803,125 +686,32 @@ export class TradierClient {
    * Updates ticker data from a quote event.
    */
   private updateTickerFromQuote(symbol: string, event: TradierQuoteEvent, timestamp: number): void {
-    const existing = this.tickerCache.get(symbol);
-    
-    const ticker: NormalizedTicker = {
-      symbol,
-      spot: (event.bid + event.ask) / 2,
-      bid: event.bid,
-      bidSize: event.bidsz,
-      ask: event.ask,
-      askSize: event.asksz,
-      last: existing?.last ?? 0,
-      volume: existing?.volume ?? 0,
-      timestamp,
-    };
-
-    this.tickerCache.set(symbol, ticker);
-    this.emit('tickerUpdate', ticker);
+    this.updateTickerFromQuoteData(symbol, event.bid, event.bidsz, event.ask, event.asksz, timestamp);
   }
 
   /**
    * Updates ticker data from a trade event.
    */
   private updateTickerFromTrade(symbol: string, event: TradierTradeEvent, timestamp: number): void {
-    const existing = this.tickerCache.get(symbol);
     const last = parseFloat(event.last);
     const volume = parseInt(event.cvol, 10);
-
-    const ticker: NormalizedTicker = {
-      symbol,
-      spot: existing?.spot ?? last,
-      bid: existing?.bid ?? 0,
-      bidSize: existing?.bidSize ?? 0,
-      ask: existing?.ask ?? 0,
-      askSize: existing?.askSize ?? 0,
-      last,
-      volume,
-      timestamp,
-    };
-
-    this.tickerCache.set(symbol, ticker);
-    this.emit('tickerUpdate', ticker);
+    this.updateTickerFromTradeData(symbol, last, 0, volume, timestamp);
   }
 
   /**
    * Updates option data from a quote event.
    */
   private updateOptionFromQuote(occSymbol: string, event: TradierQuoteEvent, timestamp: number): void {
-    const existing = this.optionCache.get(occSymbol);
-    
-    // Parse OCC symbol to extract option details
-    let parsed: { symbol: string; expiration: Date; optionType: OptionType; strike: number };
-    try {
-      parsed = parseOCCSymbol(occSymbol);
-    } catch {
-      // Invalid OCC symbol, skip
-      return;
-    }
-
-    const option: NormalizedOption = {
-      occSymbol,
-      underlying: parsed.symbol,
-      strike: parsed.strike,
-      expiration: parsed.expiration.toISOString().split('T')[0],
-      expirationTimestamp: parsed.expiration.getTime(),
-      optionType: parsed.optionType,
-      bid: event.bid,
-      bidSize: event.bidsz,
-      ask: event.ask,
-      askSize: event.asksz,
-      mark: (event.bid + event.ask) / 2,
-      last: existing?.last ?? 0,
-      volume: existing?.volume ?? 0,
-      openInterest: existing?.openInterest ?? 0,
-      impliedVolatility: existing?.impliedVolatility ?? 0,
-      timestamp,
-    };
-
-    this.optionCache.set(occSymbol, option);
-    this.emit('optionUpdate', option);
+    this.updateOptionFromQuoteData(occSymbol, event.bid, event.bidsz, event.ask, event.asksz, timestamp, parseOCCSymbol);
   }
 
   /**
    * Updates option data from a trade event.
    */
   private updateOptionFromTrade(occSymbol: string, event: TradierTradeEvent, timestamp: number): void {
-    const existing = this.optionCache.get(occSymbol);
-    
-    // Parse OCC symbol to extract option details
-    let parsed: { symbol: string; expiration: Date; optionType: OptionType; strike: number };
-    try {
-      parsed = parseOCCSymbol(occSymbol);
-    } catch {
-      // Invalid OCC symbol, skip
-      return;
-    }
-
     const last = parseFloat(event.last);
     const volume = parseInt(event.cvol, 10);
-
-    const option: NormalizedOption = {
-      occSymbol,
-      underlying: parsed.symbol,
-      strike: parsed.strike,
-      expiration: parsed.expiration.toISOString().split('T')[0],
-      expirationTimestamp: parsed.expiration.getTime(),
-      optionType: parsed.optionType,
-      bid: existing?.bid ?? 0,
-      bidSize: existing?.bidSize ?? 0,
-      ask: existing?.ask ?? 0,
-      askSize: existing?.askSize ?? 0,
-      mark: existing?.mark ?? last,
-      last,
-      volume,
-      openInterest: existing?.openInterest ?? 0,
-      impliedVolatility: existing?.impliedVolatility ?? 0,
-      timestamp,
-    };
-
-    this.optionCache.set(occSymbol, option);
-    this.emit('optionUpdate', option);
+    this.updateOptionFromTradeData(occSymbol, last, 0, volume, timestamp, parseOCCSymbol);
   }
 
   /**
@@ -954,284 +744,20 @@ export class TradierClient {
   /**
    * Updates option data from a timesale event.
    * Timesale events include bid/ask at the time of the trade, enabling aggressor side detection.
-   * 
-   * This is the primary method for calculating live open interest:
-   * - Aggressor side is determined by comparing trade price to NBBO
-   * - Buy aggressor (lifting ask) typically indicates new long positions → OI increases
-   * - Sell aggressor (hitting bid) typically indicates closing longs or new shorts → OI decreases
    */
   private updateOptionFromTimesale(occSymbol: string, event: TradierTimesaleEvent, timestamp: number): void {
-    const existing = this.optionCache.get(occSymbol);
-    
-    // Parse OCC symbol to extract option details
-    let parsed: { symbol: string; expiration: Date; optionType: OptionType; strike: number };
-    try {
-      parsed = parseOCCSymbol(occSymbol);
-    } catch {
-      // Invalid OCC symbol, skip
-      return;
-    }
-
     const bid = parseFloat(event.bid);
     const ask = parseFloat(event.ask);
     const last = parseFloat(event.last);
     const size = parseInt(event.size, 10);
 
-    // Determine aggressor side by comparing trade price to NBBO
-    const aggressorSide = this.determineAggressorSide(last, bid, ask);
-    
-    // Calculate estimated OI change based on aggressor side
-    // Buy aggressor (lifting the offer) → typically opening new long positions → +OI
-    // Sell aggressor (hitting the bid) → typically closing longs or opening shorts → -OI
-    const estimatedOIChange = this.calculateOIChangeFromTrade(aggressorSide, size, parsed.optionType);
-    
-    // Update cumulative OI change
-    const currentChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
-    this.cumulativeOIChange.set(occSymbol, currentChange + estimatedOIChange);
-    
-    if (this.verbose && estimatedOIChange !== 0) {
-      const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
-      const newLiveOI = Math.max(0, baseOI + currentChange + estimatedOIChange);
-      console.log(`[Tradier:OI] ${occSymbol} trade: price=${last.toFixed(2)}, size=${size}, aggressor=${aggressorSide}, OI change=${estimatedOIChange > 0 ? '+' : ''}${estimatedOIChange}, liveOI=${newLiveOI} (base=${baseOI}, cumulative=${currentChange + estimatedOIChange})`);
-    }
-    
-    // Record the trade for analysis
-    const trade: IntradayTrade = {
-      occSymbol,
-      price: last,
-      size,
-      bid,
-      ask,
-      aggressorSide,
-      timestamp,
-      estimatedOIChange,
-    };
-    
-    if (!this.intradayTrades.has(occSymbol)) {
-      this.intradayTrades.set(occSymbol, []);
-    }
-    this.intradayTrades.get(occSymbol)!.push(trade);
-    
-    // Emit trade event with aggressor info
-    this.emit('optionTrade', trade);
-
-    const option: NormalizedOption = {
-      occSymbol,
-      underlying: parsed.symbol,
-      strike: parsed.strike,
-      expiration: parsed.expiration.toISOString().split('T')[0],
-      expirationTimestamp: parsed.expiration.getTime(),
-      optionType: parsed.optionType,
-      bid,
-      bidSize: existing?.bidSize ?? 0, // timesale doesn't include bid/ask size
-      ask,
-      askSize: existing?.askSize ?? 0,
-      mark: (bid + ask) / 2,
-      last,
-      volume: (existing?.volume ?? 0) + size, // Accumulate volume
-      openInterest: existing?.openInterest ?? 0,
-      liveOpenInterest: this.calculateLiveOpenInterest(occSymbol),
-      impliedVolatility: existing?.impliedVolatility ?? 0,
-      timestamp,
-    };
-
-    this.optionCache.set(occSymbol, option);
-    this.emit('optionUpdate', option);
-  }
-
-  /**
-   * Determines the aggressor side of a trade by comparing trade price to NBBO.
-   * 
-   * @param tradePrice - The executed trade price
-   * @param bid - The bid price at time of trade
-   * @param ask - The ask price at time of trade
-   * @returns The aggressor side: 'buy' if lifting offer, 'sell' if hitting bid, 'unknown' if mid
-   * 
-   * @remarks
-   * The aggressor is the party that initiated the trade by crossing the spread:
-   * - Buy aggressor: Buyer lifts the offer (trades at or above ask) → bullish intent
-   * - Sell aggressor: Seller hits the bid (trades at or below bid) → bearish intent
-   * - Unknown: Trade occurred mid-market (could be internalized, crossed, or negotiated)
-   */
-  private determineAggressorSide(tradePrice: number, bid: number, ask: number): AggressorSide {
-    // Use a small tolerance for floating point comparison (0.1% of spread)
-    const spread = ask - bid;
-    const tolerance = spread > 0 ? spread * 0.001 : 0.001;
-    
-    if (tradePrice >= ask - tolerance) {
-      // Trade at or above ask → buyer lifted the offer
-      return 'buy';
-    } else if (tradePrice <= bid + tolerance) {
-      // Trade at or below bid → seller hit the bid
-      return 'sell';
-    } else {
-      // Trade mid-market - could be either side or internalized
-      return 'unknown';
-    }
-  }
-
-  /**
-   * Calculates the estimated open interest change from a single trade.
-   * 
-   * @param aggressorSide - The aggressor side of the trade
-   * @param size - Number of contracts traded
-   * @param optionType - Whether this is a call or put
-   * @returns Estimated OI change (positive = OI increase, negative = OI decrease)
-   * 
-   * @remarks
-   * This uses a simplified heuristic based on typical market behavior:
-   * 
-   * For CALLS:
-   * - Buy aggressor (lifting offer) → typically bullish, opening new longs → +OI
-   * - Sell aggressor (hitting bid) → typically closing longs or bearish new shorts → -OI
-   * 
-   * For PUTS:
-   * - Buy aggressor (lifting offer) → typically bearish/hedging, opening new longs → +OI
-   * - Sell aggressor (hitting bid) → typically closing longs → -OI
-   * 
-   * Note: This is an estimate. Without knowing if trades are opening or closing,
-   * we use aggressor side as a proxy. SpotGamma and similar providers use
-   * more sophisticated models that may incorporate position sizing, strike
-   * selection patterns, and other heuristics.
-   */
-  private calculateOIChangeFromTrade(
-    aggressorSide: AggressorSide, 
-    size: number, 
-    optionType: OptionType
-  ): number {
-    if (aggressorSide === 'unknown') {
-      // Mid-market trades are ambiguous - assume neutral impact on OI
-      return 0;
-    }
-    
-    // Simple heuristic: buy aggressor = new positions opening, sell aggressor = positions closing
-    // This applies to both calls and puts since we're measuring contract count, not direction
-    if (aggressorSide === 'buy') {
-      return size; // New positions opening
-    } else {
-      return -size; // Positions closing
-    }
-  }
-
-  /**
-   * Calculates the live (intraday) open interest estimate for an option.
-   * 
-   * @param occSymbol - OCC option symbol
-   * @returns Live OI estimate = base OI + cumulative estimated changes
-   * 
-   * @remarks
-   * Live Open Interest = Base OI (from REST at t=0) + Cumulative OI Changes (from trades)
-   * 
-   * This provides a real-time estimate of open interest that updates throughout
-   * the trading day as trades occur. The accuracy depends on:
-   * 1. The accuracy of aggressor side detection
-   * 2. The assumption that aggressors are typically opening new positions
-   * 
-   * The official OI is only updated overnight by the OCC clearing house,
-   * so this estimate fills the gap during trading hours.
-   */
-  private calculateLiveOpenInterest(occSymbol: string): number {
-    const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
-    const cumulativeChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
-    
-    // Live OI cannot go negative
-    return Math.max(0, baseOI + cumulativeChange);
-  }
-
-  /**
-   * Returns the intraday trades for an option with aggressor classification.
-   * 
-   * @param occSymbol - OCC option symbol
-   * @returns Array of intraday trades, or empty array if none
-   */
-  getIntradayTrades(occSymbol: string): IntradayTrade[] {
-    return this.intradayTrades.get(occSymbol) ?? [];
-  }
-
-  /**
-   * Returns summary statistics for intraday option flow.
-   * 
-   * @param occSymbol - OCC option symbol
-   * @returns Object with buy/sell volume, net OI change, and trade count
-   */
-  getFlowSummary(occSymbol: string): {
-    buyVolume: number;
-    sellVolume: number;
-    unknownVolume: number;
-    netOIChange: number;
-    tradeCount: number;
-  } {
-    const trades = this.intradayTrades.get(occSymbol) ?? [];
-    
-    let buyVolume = 0;
-    let sellVolume = 0;
-    let unknownVolume = 0;
-    
-    for (const trade of trades) {
-      switch (trade.aggressorSide) {
-        case 'buy':
-          buyVolume += trade.size;
-          break;
-        case 'sell':
-          sellVolume += trade.size;
-          break;
-        case 'unknown':
-          unknownVolume += trade.size;
-          break;
-      }
-    }
-    
-    return {
-      buyVolume,
-      sellVolume,
-      unknownVolume,
-      netOIChange: this.cumulativeOIChange.get(occSymbol) ?? 0,
-      tradeCount: trades.length,
-    };
-  }
-
-  /**
-   * Resets intraday tracking data. Call this at market open or when re-fetching base OI.
-   * 
-   * @param occSymbols - Optional specific symbols to reset. If not provided, resets all.
-   */
-  resetIntradayData(occSymbols?: string[]): void {
-    const symbolsToReset = occSymbols ?? Array.from(this.intradayTrades.keys());
-    
-    for (const symbol of symbolsToReset) {
-      this.intradayTrades.delete(symbol);
-      this.cumulativeOIChange.set(symbol, 0);
-    }
+    this.updateOptionFromTimesaleData(occSymbol, last, size, bid, ask, timestamp, parseOCCSymbol);
   }
 
   /**
    * Checks if a symbol is an OCC option symbol.
    */
-  private isOptionSymbol(symbol: string): boolean {
+  private isTradierOptionSymbol(symbol: string): boolean {
     return OCC_OPTION_PATTERN.test(symbol);
-  }
-
-  /**
-   * Emits an event to all registered listeners.
-   */
-  private emit<T>(event: TradierClientEventType, data: T): void {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.forEach(listener => {
-        try {
-          listener(data);
-        } catch (error) {
-          // Don't let listener errors break the stream
-          console.error('Event listener error:', error);
-        }
-      });
-    }
-  }
-
-  /**
-   * Simple sleep utility.
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

@@ -1,5 +1,17 @@
 import { NormalizedOption, NormalizedTicker, OptionType } from '../../types';
 import { parseOCCSymbol } from '../../utils/occ';
+import { 
+  BaseBrokerClient, 
+  BaseBrokerClientOptions,
+  AggressorSide,
+  IntradayTrade,
+  FlowSummary,
+  BrokerClientEventType,
+  BrokerEventListener,
+} from './BaseBrokerClient';
+
+// Re-export types for backwards compatibility
+export type { AggressorSide, IntradayTrade, FlowSummary };
 
 // ==================== Schwab API Types ====================
 
@@ -241,47 +253,18 @@ enum OptionsBookFields {
 }
 
 /**
- * Aggressor side of a trade
- */
-export type AggressorSide = 'buy' | 'sell' | 'unknown';
-
-/**
- * Intraday trade information with aggressor classification
- */
-export interface IntradayTrade {
-  /** OCC option symbol */
-  occSymbol: string;
-  /** Trade price */
-  price: number;
-  /** Trade size (number of contracts) */
-  size: number;
-  /** Bid at time of trade */
-  bid: number;
-  /** Ask at time of trade */
-  ask: number;
-  /** Aggressor side determined from price vs NBBO */
-  aggressorSide: AggressorSide;
-  /** Timestamp of the trade */
-  timestamp: number;
-  /** Estimated OI change */
-  estimatedOIChange: number;
-}
-
-/**
- * Event types emitted by SchwabClient
- */
-type SchwabClientEventType = 'tickerUpdate' | 'optionUpdate' | 'optionTrade' | 'connected' | 'disconnected' | 'error';
-
-/**
- * Event listener callback type
- */
-type SchwabEventListener<T> = (data: T) => void;
-
-/**
  * Regex pattern to identify OCC option symbols
  * Schwab uses space-padded format: "AAPL  240517C00170000"
  */
-const OCC_OPTION_PATTERN = /^.{1,6}\s*\d{6}[CP]\d{8}$/;
+const SCHWAB_OCC_OPTION_PATTERN = /^.{1,6}\s*\d{6}[CP]\d{8}$/;
+
+/**
+ * Schwab client configuration options
+ */
+export interface SchwabClientOptions extends BaseBrokerClientOptions {
+  /** Schwab OAuth access token (required) */
+  accessToken: string;
+}
 
 /**
  * SchwabClient handles real-time streaming connections to the Charles Schwab API
@@ -312,7 +295,9 @@ const OCC_OPTION_PATTERN = /^.{1,6}\s*\d{6}[CP]\d{8}$/;
  * client.subscribe(['SPY', 'SPY   240517C00500000']); // Equity and option
  * ```
  */
-export class SchwabClient {
+export class SchwabClient extends BaseBrokerClient {
+  protected readonly brokerName = 'Schwab';
+
   /** Schwab OAuth access token */
   private accessToken: string;
 
@@ -335,50 +320,17 @@ export class SchwabClient {
   /** Request ID counter */
   private requestId: number = 0;
 
-  /** Currently subscribed symbols */
-  private subscribedSymbols: Set<string> = new Set();
-
   /** Map from Schwab symbol to OCC symbol */
   private schwabToOccMap: Map<string, string> = new Map();
 
   /** Map from OCC symbol to Schwab symbol */
   private occToSchwabMap: Map<string, string> = new Map();
 
-  /** Cached ticker data */
-  private tickerCache: Map<string, NormalizedTicker> = new Map();
-
-  /** Cached option data */
-  private optionCache: Map<string, NormalizedOption> = new Map();
-
-  /** Base open interest from REST API */
-  private baseOpenInterest: Map<string, number> = new Map();
-
-  /** Cumulative estimated OI change from intraday trades */
-  private cumulativeOIChange: Map<string, number> = new Map();
-
-  /** History of intraday trades */
-  private intradayTrades: Map<string, IntradayTrade[]> = new Map();
-
-  /** Event listeners */
-  private eventListeners: Map<SchwabClientEventType, Set<SchwabEventListener<unknown>>> = new Map();
-
-  /** Reconnection attempt counter */
-  private reconnectAttempts: number = 0;
-
-  /** Maximum reconnection attempts */
-  private readonly maxReconnectAttempts: number = 5;
-
-  /** Reconnection delay in ms */
-  private readonly baseReconnectDelay: number = 1000;
-
   /** Keepalive interval handle */
   private keepaliveInterval: ReturnType<typeof setInterval> | null = null;
 
   /** Schwab API base URL */
   private readonly apiBaseUrl: string = 'https://api.schwabapi.com';
-
-  /** Whether to log verbose debug information */
-  private readonly verbose: boolean;
 
   /**
    * Creates a new SchwabClient instance.
@@ -387,20 +339,9 @@ export class SchwabClient {
    * @param options.accessToken - Schwab OAuth access token (required)
    * @param options.verbose - Whether to log verbose debug information (default: false)
    */
-  constructor(options: {
-    accessToken: string;
-    verbose?: boolean;
-  }) {
+  constructor(options: SchwabClientOptions) {
+    super(options);
     this.accessToken = options.accessToken;
-    this.verbose = options.verbose ?? false;
-
-    // Initialize event listener maps
-    this.eventListeners.set('tickerUpdate', new Set());
-    this.eventListeners.set('optionUpdate', new Set());
-    this.eventListeners.set('optionTrade', new Set());
-    this.eventListeners.set('connected', new Set());
-    this.eventListeners.set('disconnected', new Set());
-    this.eventListeners.set('error', new Set());
   }
 
   // ==================== Public API ====================
@@ -478,7 +419,7 @@ export class SchwabClient {
     const options: string[] = [];
 
     for (const symbol of symbols) {
-      if (this.isOptionSymbol(symbol)) {
+      if (this.isSchwabOptionSymbol(symbol)) {
         options.push(this.toSchwabOptionSymbol(symbol));
       } else {
         tickers.push(symbol);
@@ -511,7 +452,7 @@ export class SchwabClient {
     const options: string[] = [];
 
     for (const symbol of symbols) {
-      if (this.isOptionSymbol(symbol)) {
+      if (this.isSchwabOptionSymbol(symbol)) {
         options.push(this.toSchwabOptionSymbol(symbol));
       } else {
         tickers.push(symbol);
@@ -533,7 +474,7 @@ export class SchwabClient {
    */
   unsubscribeFromAll(): void {
     const allSymbols = Array.from(this.subscribedSymbols);
-    const allOptionSymbols = allSymbols.filter(s => this.isOptionSymbol(s)).map(s => this.toSchwabOptionSymbol(s));
+    const allOptionSymbols = allSymbols.filter(s => this.isSchwabOptionSymbol(s)).map(s => this.toSchwabOptionSymbol(s));
     this.subscribedSymbols.clear();
     // unsub from all equities
     if (allSymbols.length > 0) {
@@ -670,102 +611,6 @@ export class SchwabClient {
     await Promise.all(fetchPromises);
   }
 
-  /**
-   * Returns cached option data for a symbol.
-   */
-  getOption(occSymbol: string): NormalizedOption | undefined {
-    return this.optionCache.get(this.normalizeOccSymbol(occSymbol));
-  }
-
-  /**
-   * Returns all cached options.
-   */
-  getAllOptions(): Map<string, NormalizedOption> {
-    return new Map(this.optionCache);
-  }
-
-  /**
-   * Registers an event listener.
-   */
-  on<T>(event: SchwabClientEventType, listener: SchwabEventListener<T>): this {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.add(listener as SchwabEventListener<unknown>);
-    }
-    return this;
-  }
-
-  /**
-   * Removes an event listener.
-   */
-  off<T>(event: SchwabClientEventType, listener: SchwabEventListener<T>): this {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.delete(listener as SchwabEventListener<unknown>);
-    }
-    return this;
-  }
-
-  /**
-   * Returns intraday trades for an option.
-   */
-  getIntradayTrades(occSymbol: string): IntradayTrade[] {
-    return this.intradayTrades.get(this.normalizeOccSymbol(occSymbol)) ?? [];
-  }
-
-  /**
-   * Returns flow summary for an option.
-   */
-  getFlowSummary(occSymbol: string): {
-    buyVolume: number;
-    sellVolume: number;
-    unknownVolume: number;
-    netOIChange: number;
-    tradeCount: number;
-  } {
-    const normalizedSymbol = this.normalizeOccSymbol(occSymbol);
-    const trades = this.intradayTrades.get(normalizedSymbol) ?? [];
-    
-    let buyVolume = 0;
-    let sellVolume = 0;
-    let unknownVolume = 0;
-    
-    for (const trade of trades) {
-      switch (trade.aggressorSide) {
-        case 'buy':
-          buyVolume += trade.size;
-          break;
-        case 'sell':
-          sellVolume += trade.size;
-          break;
-        case 'unknown':
-          unknownVolume += trade.size;
-          break;
-      }
-    }
-    
-    return {
-      buyVolume,
-      sellVolume,
-      unknownVolume,
-      netOIChange: this.cumulativeOIChange.get(normalizedSymbol) ?? 0,
-      tradeCount: trades.length,
-    };
-  }
-
-  /**
-   * Resets intraday tracking data.
-   */
-  resetIntradayData(occSymbols?: string[]): void {
-    const symbolsToReset = occSymbols?.map(s => this.normalizeOccSymbol(s)) 
-      ?? Array.from(this.intradayTrades.keys());
-    
-    for (const symbol of symbolsToReset) {
-      this.intradayTrades.delete(symbol);
-      this.cumulativeOIChange.set(symbol, 0);
-    }
-  }
-
   // ==================== Private Methods ====================
 
   /**
@@ -773,18 +618,38 @@ export class SchwabClient {
    */
   private async getUserPreferences(): Promise<SchwabUserPreferences | null> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/trader/v1/userPreference`, {
+      const url = `${this.apiBaseUrl}/trader/v1/userPreference`;
+      const headers = this.getAuthHeaders();
+      const authHeader = (headers['Authorization'] ?? headers['authorization'] ?? '') as string;
+      const maskedAuth = typeof authHeader === 'string' && authHeader.length > 12 ? `${authHeader.slice(0,12)}...` : authHeader;
+
+      if (this.verbose) {
+        console.debug('[Schwab] GET userPreference', url, { maskedAuthorization: maskedAuth, headerKeys: Object.keys(headers) });
+      }
+
+      const response = await fetch(url, {
         method: 'GET',
-        headers: this.getAuthHeaders(),
+        headers,
       });
 
+      const text = await response.text();
       if (!response.ok) {
-        const errorText = await response.text();
-        this.emit('error', new Error(`Failed to get user preferences: ${response.statusText} - ${errorText}`));
+        if (this.verbose) {
+          console.error('[Schwab] userPreference failed', response.status, response.statusText, text);
+        }
+
+        let parsed: unknown = text;
+        try { parsed = JSON.parse(text); } catch {}
+
+        this.emit('error', new Error(`Failed to get user preferences: ${response.status} ${response.statusText} - ${typeof parsed === 'string' ? parsed : JSON.stringify(parsed)}`));
         return null;
       }
 
-      return await response.json() as SchwabUserPreferences;
+      const json = JSON.parse(text) as SchwabUserPreferences;
+      if (this.verbose) {
+        console.debug('[Schwab] userPreference success', json);
+      }
+      return json;
     } catch (error) {
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
       return null;
@@ -1184,57 +1049,6 @@ export class SchwabClient {
   }
 
   /**
-   * Records a trade and updates OI tracking.
-   */
-  private recordTrade(
-    occSymbol: string,
-    price: number,
-    size: number,
-    bid: number,
-    ask: number,
-    timestamp: number
-  ): void {
-    const aggressorSide = this.determineAggressorSide(price, bid, ask);
-    
-    // Get option type for OI calculation
-    let optionType: OptionType = 'call';
-    try {
-      const parsed = parseOCCSymbol(occSymbol);
-      optionType = parsed.optionType;
-    } catch {
-      const existing = this.optionCache.get(occSymbol);
-      if (existing) optionType = existing.optionType;
-    }
-
-    const estimatedOIChange = this.calculateOIChangeFromTrade(aggressorSide, size, optionType);
-    const currentChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
-    this.cumulativeOIChange.set(occSymbol, currentChange + estimatedOIChange);
-    
-    if (this.verbose && estimatedOIChange !== 0) {
-      const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
-      const newLiveOI = Math.max(0, baseOI + currentChange + estimatedOIChange);
-      console.log(`[Schwab:OI] ${occSymbol} trade: price=${price.toFixed(2)}, size=${size}, aggressor=${aggressorSide}, OI change=${estimatedOIChange > 0 ? '+' : ''}${estimatedOIChange}, liveOI=${newLiveOI} (base=${baseOI}, cumulative=${currentChange + estimatedOIChange})`);
-    }
-
-    const trade: IntradayTrade = {
-      occSymbol,
-      price,
-      size,
-      bid,
-      ask,
-      aggressorSide,
-      timestamp,
-      estimatedOIChange,
-    };
-
-    if (!this.intradayTrades.has(occSymbol)) {
-      this.intradayTrades.set(occSymbol, []);
-    }
-    this.intradayTrades.get(occSymbol)!.push(trade);
-    this.emit('optionTrade', trade);
-  }
-
-  /**
    * Processes a contract from the option chain response.
    */
   private processChainContract(contract: SchwabOptionContract, targetSymbols: Set<string>): void {
@@ -1306,44 +1120,6 @@ export class SchwabClient {
   }
 
   /**
-   * Determines aggressor side from trade price vs NBBO.
-   */
-  private determineAggressorSide(tradePrice: number, bid: number, ask: number): AggressorSide {
-    if (bid <= 0 || ask <= 0) return 'unknown';
-    
-    const spread = ask - bid;
-    const tolerance = spread > 0 ? spread * 0.001 : 0.001;
-
-    if (tradePrice >= ask - tolerance) {
-      return 'buy';
-    } else if (tradePrice <= bid + tolerance) {
-      return 'sell';
-    }
-    return 'unknown';
-  }
-
-  /**
-   * Calculates estimated OI change from trade.
-   */
-  private calculateOIChangeFromTrade(
-    aggressorSide: AggressorSide,
-    size: number,
-    _optionType: OptionType
-  ): number {
-    if (aggressorSide === 'unknown') return 0;
-    return aggressorSide === 'buy' ? size : -size;
-  }
-
-  /**
-   * Calculates live open interest.
-   */
-  private calculateLiveOpenInterest(occSymbol: string): number {
-    const baseOI = this.baseOpenInterest.get(occSymbol) ?? 0;
-    const cumulativeChange = this.cumulativeOIChange.get(occSymbol) ?? 0;
-    return Math.max(0, baseOI + cumulativeChange);
-  }
-
-  /**
    * Converts Schwab option symbol to OCC format.
    * Schwab format: "AAPL  240517C00170000" (6-char padded underlying)
    */
@@ -1355,23 +1131,6 @@ export class SchwabClient {
     // Schwab symbols are already close to OCC format
     // Just normalize by removing extra spaces and ensuring proper padding
     return this.normalizeOccSymbol(schwabSymbol);
-  }
-
-  /**
-   * Normalizes an OCC symbol to consistent format.
-   * Removes extra spaces, ensures proper formatting.
-   */
-  private normalizeOccSymbol(symbol: string): string {
-    // Remove all spaces and reformat
-    const stripped = symbol.replace(/\s+/g, '');
-    
-    // Match the parts: ROOT + YYMMDD + C/P + 8-digit strike
-    const match = stripped.match(/^([A-Z]+)(\d{6})([CP])(\d{8})$/);
-    if (match) {
-      return `${match[1]}${match[2]}${match[3]}${match[4]}`;
-    }
-    
-    return stripped;
   }
 
   /**
@@ -1397,10 +1156,10 @@ export class SchwabClient {
   }
 
   /**
-   * Checks if symbol is an option symbol.
+   * Checks if symbol is an option symbol (Schwab format allows spaces).
    */
-  private isOptionSymbol(symbol: string): boolean {
-    return OCC_OPTION_PATTERN.test(symbol) || /\d{6}[CP]\d{8}/.test(symbol.replace(/\s+/g, ''));
+  private isSchwabOptionSymbol(symbol: string): boolean {
+    return SCHWAB_OCC_OPTION_PATTERN.test(symbol) || /\d{6}[CP]\d{8}/.test(symbol.replace(/\s+/g, ''));
   }
 
   /**
@@ -1413,11 +1172,9 @@ export class SchwabClient {
     }
 
     this.reconnectAttempts++;
-    const delay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    const delay = this.getReconnectDelay();
 
-    if (this.verbose) {
-      console.log(`[Schwab:WS] Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-    }
+    this.log(`Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
 
     await this.sleep(delay);
 
@@ -1435,41 +1192,5 @@ export class SchwabClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     }
-  }
-
-  /**
-   * Emits an event to all listeners.
-   */
-  private emit<T>(event: SchwabClientEventType, data: T): void {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.forEach(listener => {
-        try {
-          listener(data);
-        } catch (error) {
-          console.error('Event listener error:', error);
-        }
-      });
-    }
-  }
-
-  /**
-   * Converts value to number, handling NaN and null.
-   */
-  private toNumber(value: unknown): number {
-    if (value === null || value === undefined) return 0;
-    if (typeof value === 'number') return isNaN(value) ? 0 : value;
-    if (typeof value === 'string') {
-      const num = parseFloat(value);
-      return isNaN(num) ? 0 : num;
-    }
-    return 0;
-  }
-
-  /**
-   * Sleep utility.
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
