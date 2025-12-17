@@ -25,7 +25,7 @@ export default function Home() {
         </p>
         <div className="mt-6">
           <a
-            href="/whitepaper.pdf"
+            href="/floe/whitepaper.pdf"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block font-mono text-sm text-white bg-[#CB3837] px-6 py-3 rounded hover:bg-[#B03231] transition-colors"
