@@ -21,7 +21,7 @@ export default function Home() {
           floe
         </h1>
         <p className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
-          Zero-dependency TypeScript functions for options flow: Black-Scholes, greeks, dealer exposures, implied PDFs, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.
+          Zero-dependency TypeScript functions for options flow: Black-Scholes, greeks, IV surfaces, dealer exposures, implied PDFs, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.
         </p>
         <div className="mt-6">
           <a

@@ -2,7 +2,7 @@
 
 ![npm](https://img.shields.io/npm/v/@fullstackcraftllc/floe?style=flat-square) ![License](https://img.shields.io/npm/l/@fullstackcraftllc/floe?style=flat-square) ![TypeScript](https://img.shields.io/badge/TypeScript-4.9-blue?style=flat-square&logo=typescript)
 
-Zero-dependency TypeScript functions for options flow: Black-Scholes, greeks, dealer exposures, implied PDFs, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.
+Zero-dependency TypeScript functions for options flow: Black-Scholes, greeks, IV surfaces, dealer exposures, implied PDFs, and more, with a clean, type-safe API. Built for use in trading platforms and fintech applications.
 
 The same library that is used in [Full Stack Craft's](https://fullstackcraft.com) various fintech products including [The Wheel Screener](https://wheelscreener.com), [LEAPS Screener](https://leapsscreener.com), [Option Screener](https://option-screener.com), [AMT JOY](https://amtjoy.com), and [VannaCharm](https://vannacharm.com).
 
