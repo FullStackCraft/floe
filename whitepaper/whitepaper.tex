@@ -25,7 +25,7 @@
 % Add hyperref last
 \usepackage[hidelinks]{hyperref}
 
-\title{Introducing \texttt{floe}: Real-time Calculation of Dealer Gamma, Vanna, and Charm Exposures via Broker Data}
+\title{Introducing \texttt{floe}: Static and Real-time Calculation of Options Pricing, Flows, and Dealer Gamma, Vanna, and Charm Exposures via Broker Data}
 \author{Full Stack Craft LLC}
 \date{\today}
 
@@ -37,13 +37,28 @@
 \tableofcontents
 \newpage
 
-\section{Introduction}
+\section{Motivation}
 
-This paper introduces \texttt{floe}: a zero-dependency, browser-only TypeScript library for for computing real-time dealer gamma, vanna, and charm exposures from streaming broker data. The approach consists of two phases: an initialization phase that captures open interest at market open ($t=0$), and a continuous update phase that recalculates exposures as new spot prices and option quotes arrive.
+In recent years, the interest and involvement of retail traders in global markets has surged, including the use of more complex instruments such as options and futures. For the most part, many brokerages have embraced this secular trend by offering their customers a way to stream real-time data directly on their personal computers. However, the standard interface between each brokerage varies widely, and retail traders are left with challenging documentation and inconsistent APIs to work with. We attempt to alleviate this problem by introducing a zero-dependency, browser-only TypeScript library that can compute a variety of both static and real-time options pricing and flow data, including dealer gamma, vanna, and charm exposures from streaming broker data.
 
-\section{Initialization Phase: Capturing Open Interest}
+\section{Introducing \texttt{floe}}
 
-At market open, we fetch the complete option chain $\mathcal{O}$ for the underlying symbol. Each option $o \in \mathcal{O}$ contains:
+We introduce \texttt{floe}: a zero-dependency, browser-only TypeScript library for computing real-time options flow data, including dealer gamma, vanna, and charm exposures that can be derived purely from real-time streamed broker data alone.
+
+The mathematical foundation of \texttt{floe} rests upon the seminal work of Black and Scholes \cite{black1973pricing} and Merton \cite{merton1973theory}, whose option pricing framework enables the computation of the Greeks used throughout this paper.
+
+\section{Paper Structure}
+
+The remainder of this paper is divided into two broad sections: the first and main focus of this paper, Section~\ref{sec:realtime-dealer-exposure-calculations} describes our process of calculating in real-time both a smoothed implied volatility surface, the live open interest, and the dealer exposures derived from it. All following sections detail the variety of other options related pricing and analytics that \texttt{floe} can compute.
+
+\section{Real-time Dealer Exposure Calculations}
+\label{sec:realtime-dealer-exposure-calculations}
+
+The real-time dealer exposure calculation consists of two phases: an initialization phase that captures open interest at market open ($t=0$), and a continuous update phase that recalculates exposures as new spot prices and option quotes arrive. These calculations can be done over a unified interface regardless of the given broker or data source.
+
+\subsection{Initialization Phase: Capturing Open Interest}
+
+At or before market open, we fetch the complete option chain $\mathcal{O}$ for the underlying symbol. Each option $o \in \mathcal{O}$ contains:
 
 \begin{align*}
 o = \langle K, T, \phi, \text{bid}, \text{ask}, \text{OI}_0 \rangle
@@ -60,54 +75,9 @@ Where:
 
 The market context includes the current spot price $S_0$, risk-free rate $r$, and dividend yield $q$.
 
-\section{Black-Scholes Greeks Calculation}
+\subsection{Implied Volatility Surface Construction}
 
-For each option, we compute Greeks using the Black-Scholes-Merton model with continuous dividend yield.
-
-\subsection{Core Parameters}
-
-Given spot $S$, strike $K$, time to expiry $\tau$ (in years), volatility $\sigma$, risk-free rate $r$, and dividend yield $q$:
-
-\begin{align}
-d_1 &= \frac{\ln(S/K) + (r - q + \sigma^2/2)\tau}{\sigma\sqrt{\tau}} \\
-d_2 &= d_1 - \sigma\sqrt{\tau}
-\end{align}
-
-\subsection{First-Order Greeks}
-
-For a \textbf{call} option:
-\begin{align}
-\Delta_C &= e^{-q\tau} N(d_1) \\
-\Gamma &= \frac{e^{-q\tau} n(d_1)}{S \sigma \sqrt{\tau}} \\
-\Theta_C &= -\frac{S \sigma e^{-q\tau} n(d_1)}{2\sqrt{\tau}} - rKe^{-r\tau}N(d_2) + qSe^{-q\tau}N(d_1) \\
-\mathcal{V} &= S e^{-q\tau} \sqrt{\tau} \cdot n(d_1)
-\end{align}
-
-For a \textbf{put} option:
-\begin{align}
-\Delta_P &= -e^{-q\tau} N(-d_1) \\
-\Theta_P &= -\frac{S \sigma e^{-q\tau} n(d_1)}{2\sqrt{\tau}} + rKe^{-r\tau}N(-d_2) - qSe^{-q\tau}N(-d_1)
-\end{align}
-
-Where $N(\cdot)$ is the cumulative normal distribution and $n(\cdot)$ is the standard normal PDF:
-\begin{align}
-n(x) &= \frac{1}{\sqrt{2\pi}} e^{-x^2/2} \\
-N(x) &\approx 1 - n(x) \cdot t \cdot (a_1 + t(a_2 + t(a_3 + t(a_4 + t \cdot a_5)))) \quad \text{for } x > 0
-\end{align}
-
-using the Abramowitz-Stegun approximation with $t = 1/(1 + 0.2316419|x|)$.
-
-\subsection{Second-Order Greeks}
-
-\begin{align}
-\text{Vanna} &= -e^{-q\tau} n(d_1) \frac{d_2}{\sigma} \\
-\text{Charm}_C &= -q e^{-q\tau} N(d_1) - \frac{e^{-q\tau} n(d_1) \left(2(r-q)\tau - d_2 \sigma \sqrt{\tau}\right)}{2\tau \sigma \sqrt{\tau}} \\
-\text{Volga} &= \mathcal{V} \cdot \frac{d_1 d_2}{S\sigma}
-\end{align}
-
-\section{Implied Volatility Surface Construction}
-
-\subsection{IV Calculation via Bisection}
+Before calculating the actual dealer exposures, we first need to construct a smooth implied volatility (IV) surface for each expiration $T$. These per-strike IVs later have a direct affect on the vanna exposure calculation, but also through the gamma and charm calculations themselves via the greeks formulas.
 
 For each option with observed market price $P_{\text{mkt}}$, we solve for $\sigma_{\text{IV}}$:
 
@@ -130,8 +100,6 @@ To ensure arbitrage-free and smooth IV surfaces, we apply total variance smoothi
 
 The convexity constraint ensures no calendar spread arbitrage exists in the surface.
 
-\section{Dealer Exposure Calculation}
-
 \subsection{Dealer Position Assumption}
 
 We assume dealers are net short options (standard market-maker hedging assumption):
@@ -139,6 +107,12 @@ We assume dealers are net short options (standard market-maker hedging assumptio
     \item \textbf{Short calls}: Dealers sold calls to retail buyers
     \item \textbf{Long puts}: Dealers bought puts from retail sellers (equivalently, short put exposure is negative)
 \end{itemize}
+
+\subsection{Calculate Greeks for Each Option}
+
+For each option $o$ with strike $K$, expiration $T$, and smoothed IV $\sigma_{\text{IV}}(K)$, we compute the following Greeks using the Black-Scholes-Merton formulas (see Section~\ref{sec:black-scholes-greeks-calculation}).
+
+We now have all necessary components to compute dealer exposures.
 
 \subsection{Exposure Formulas}
 
@@ -149,10 +123,25 @@ For each strike $K$ with call open interest $\text{OI}_C$ and put open interest 
 \text{GEX}_K = \left(-\text{OI}_C \cdot \Gamma_C + \text{OI}_P \cdot \Gamma_P\right) \cdot (S \cdot 100) \cdot S \cdot 0.01
 \end{align}
 
+Because the share multiplier and 1\% move resolve to unity, this simplifies to:
+\begin{align}
+\text{GEX}_K = \left(-\text{OI}_C \cdot \Gamma_C + \text{OI}_P \cdot \Gamma_P\right) \cdot S^2
+\end{align}
+
+Where $\Gamma_C$ and $\Gamma_P$ are the gamma of the call and put contracts at that expiration and strike, respectively.
+
 \textbf{Vanna Exposure (VEX)}:
 \begin{align}
 \text{VEX}_K = \left(-\text{OI}_C \cdot \text{Vanna}_C + \text{OI}_P \cdot \text{Vanna}_P\right) \cdot (S \cdot 100) \cdot \sigma_{\text{IV}} \cdot 0.01
 \end{align}
+
+Reducing constants:
+
+\begin{align}
+\text{VEX}_K = \left(-\text{OI}_C \cdot \text{Vanna}_C + \text{OI}_P \cdot \text{Vanna}_P\right) \cdot S \cdot \sigma_{\text{IV}}
+\end{align}
+
+Where $\text{Vanna}_C$ and $\text{Vanna}_P$ are the vanna of the call and put contracts at that expiration and strike, respectively, and $\sigma_{\text{IV}}$ is the smoothed implied volatility at that strike.
 
 \textbf{Charm Exposure (CEX)}:
 \begin{align}
@@ -171,9 +160,7 @@ Sum across all strikes for each expiration:
 \text{Net Exposure} &= \text{NEX}_{\text{total}} &= \text{GEX}_{\text{total}} + \text{VEX}_{\text{total}} + \text{CEX}_{\text{total}}
 \end{align}
 
-\section{Real-Time Update Process}
-
-\subsection{Event-Driven Architecture}
+\subsection{Real-Time Update Process}
 
 The system subscribes to streaming quote data from brokers. On each update event:
 
@@ -211,9 +198,93 @@ Where $\delta_i$ represents the estimated OI change from trade $i$, inferred by 
     \item Trade at bid $\Rightarrow$ seller-initiated $\Rightarrow$ potential OI decrease or close
 \end{itemize}
 
+
+\subsection{Minimum Broker Requirements}
+
+Note for this process to function effectively, brokers must provide a minimum:
+
+\begin{itemize}
+    \item Real-time streaming quotes for underlying and options
+    \item Open interest data before or at market open
+    \item Trade prints with timestamps to estimate live OI changes
+\end{itemize}
+
+\texttt{floe} itself could potentially be used to do the rest of all calculations: IV surface construction, Greeks calculation, exposure aggregation, and real-time updates.
+
+\section{Black-Scholes Greeks Calculation}
+\label{sec:black-scholes-greeks-calculation}
+
+For any option, one can compute Greeks with \texttt{floe} using the Black-Scholes-Merton model with continuous dividend yield \cite{black1973pricing, merton1973theory}.
+
+\subsection{Core Parameters}
+
+Given spot $S$, strike $K$, time to expiry $\tau$ (in years), volatility $\sigma$, risk-free rate $r$, and dividend yield $q$:
+
+\begin{align}
+d_1 &= \frac{\ln(S/K) + (r - q + \sigma^2/2)\tau}{\sigma\sqrt{\tau}} \\
+d_2 &= d_1 - \sigma\sqrt{\tau}
+\end{align}
+
+\subsection{First-Order Greeks}
+
+For a \textbf{call} option:
+\begin{align}
+\Delta_C &= e^{-q\tau} N(d_1) \\
+\Gamma &= \frac{e^{-q\tau} n(d_1)}{S \sigma \sqrt{\tau}} \\
+\Theta_C &= -\frac{S \sigma e^{-q\tau} n(d_1)}{2\sqrt{\tau}} - rKe^{-r\tau}N(d_2) + qSe^{-q\tau}N(d_1) \\
+\mathcal{V} &= S e^{-q\tau} \sqrt{\tau} \cdot n(d_1)
+\end{align}
+
+For a \textbf{put} option:
+\begin{align}
+\Delta_P &= -e^{-q\tau} N(-d_1) \\
+\Theta_P &= -\frac{S \sigma e^{-q\tau} n(d_1)}{2\sqrt{\tau}} + rKe^{-r\tau}N(-d_2) - qSe^{-q\tau}N(-d_1)
+\end{align}
+
+Where $N(\cdot)$ is the cumulative normal distribution and $n(\cdot)$ is the standard normal PDF:
+\begin{align}
+n(x) &= \frac{1}{\sqrt{2\pi}} e^{-x^2/2} \\
+N(x) &\approx 1 - n(x) \cdot t \cdot (a_1 + t(a_2 + t(a_3 + t(a_4 + t \cdot a_5)))) \quad \text{for } x > 0
+\end{align}
+
+using the Abramowitz-Stegun approximation \cite{abramowitz1964handbook} with $t = 1/(1 + 0.2316419|x|)$.
+
+\subsection{Second-Order Greeks}
+
+\begin{align}
+\text{Vanna} &= -e^{-q\tau} n(d_1) \frac{d_2}{\sigma} \\
+\text{Charm}_C &= -q e^{-q\tau} N(d_1) - \frac{e^{-q\tau} n(d_1) \left(2(r-q)\tau - d_2 \sigma \sqrt{\tau}\right)}{2\tau \sigma \sqrt{\tau}} \\
+\end{align}
+
+\section{Implied Probability Distribution}
+
+\texttt{floe} provides functionality to extract the risk-neutral probability distribution implied by option prices, following the Breeden-Litzenberger approach \cite{breeden1978prices}.
+
+\subsection{Theoretical Foundation}
+
+Breeden and Litzenberger demonstrated that the risk-neutral probability density function $f(K)$ of the underlying asset at expiration can be recovered from the second derivative of call option prices with respect to strike:
+
+\begin{align}
+f(K) = e^{r\tau} \frac{\partial^2 C}{\partial K^2}
+\end{align}
+
+where $C(K)$ is the call option price as a function of strike $K$, $r$ is the risk-free rate, and $\tau$ is time to expiration.
+
+\subsection{Numerical Implementation}
+
+In practice, we estimate the second derivative using central finite differences on the mid-prices of observed call options:
+
+\begin{align}
+\frac{\partial^2 C}{\partial K^2} \bigg|_{K_i} \approx \frac{C_{i+1} - 2C_i + C_{i-1}}{(\Delta K)^2}
+\end{align}
+
+where $C_i$ is the mid-price at strike $K_i$ and $\Delta K = K_{i+1} - K_{i-1}$.
+
+The resulting density values are normalized to sum to unity, yielding a proper probability distribution. From this distribution, we compute summary statistics including the mode (most likely price), median, expected value, and expected move (standard deviation).
+
 \section{Shares Needed to Cover}
 
-To estimate the hedging flow required to neutralize dealer exposure:
+As a sort of global heuristic across all exposures at all strikes for a given expiration, one can estimate the total hedging flow required to neutralize dealer exposure:
 
 \begin{align}
 \text{Shares to Cover} &= \frac{-\text{Net Exposure}}{S} \\
@@ -226,17 +297,7 @@ The sign indicates directional pressure:
     \item Positive net exposure $\Rightarrow$ dealers must sell $\Rightarrow$ downward price pressure
 \end{itemize}
 
-\section{Minimum Broker Requirements}
-
-Note for this process to function effectively, brokers must provide a minimum:
-
-\begin{itemize}
-    \item Real-time streaming quotes for underlying and options
-    \item Open interest data before or at market open
-    \item Trade prints with timestamps to estimate live OI changes
-\end{itemize}
-
-\texttt{floe} itself could potentially be used to do the rest of all calculations: IV surface construction, Greeks calculation, exposure aggregation, and real-time updates.
+This method assumes equal weighting of exposure across all strikes, and that the hedge will be perfectly (and exclusively) executed by buying or selling shares of the underlying.
 
 \section{Future Work}
 
@@ -260,10 +321,33 @@ The complete pipeline for real-time dealer exposure calculation:
 
 This methodology enables sub-second exposure updates, providing actionable insight into market-maker hedging dynamics as market conditions evolve.
 
-\end{document}
+\begin{thebibliography}{9}
 
-% Appendix with repository link
+\bibitem{black1973pricing}
+F. Black and M. Scholes,
+``The pricing of options and corporate liabilities,''
+\textit{Journal of Political Economy}, vol. 81, no. 3, pp. 637--654, 1973.
+
+\bibitem{merton1973theory}
+R. C. Merton,
+``Theory of rational option pricing,''
+\textit{Bell Journal of Economics and Management Science}, vol. 4, no. 1, pp. 141--183, 1973.
+
+\bibitem{breeden1978prices}
+D. T. Breeden and R. H. Litzenberger,
+``Prices of state-contingent claims implicit in option prices,''
+\textit{Journal of Business}, vol. 51, no. 4, pp. 621--651, 1978.
+
+\bibitem{abramowitz1964handbook}
+M. Abramowitz and I. A. Stegun,
+\textit{Handbook of Mathematical Functions with Formulas, Graphs, and Mathematical Tables}.
+Washington, DC: National Bureau of Standards, Applied Mathematics Series 55, 1964.
+
+\end{thebibliography}
+
 \appendix
 \section{Repository}
 
 For the full source, examples, and license, see the project repository: \href{https://github.com/FullStackCraft/floe}{https://github.com/FullStackCraft/floe}.
+
+\end{document}

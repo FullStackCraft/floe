@@ -96,6 +96,14 @@ export default function Home() {
           >
             GitHub
           </a>
+          <a 
+            href="https://www.npmjs.com/package/@fullstackcraftllc/floe" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="hover:text-black transition-colors"
+          >
+            NPM
+          </a>
           <span className="mx-3">·</span>
           <a 
             href="https://fullstackcraft.com" 
