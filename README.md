@@ -37,13 +37,13 @@ The same library that is used in [Full Stack Craft's](https://fullstackcraft.com
 
 Due to the overwhelming variety of how broker APIs structure their data (and how they make it available), there is a wide variety of how much support we can provide out-of-the-box for different brokers, summarized in this table:
 
-| Broker                | Black-Scholes | Greeks | Open Interest Based Exposures | Options-Book Based Exposures | Implied PDF Calculations |
-|-----------------------|--------------|--------|-------------------------------|------------------------------|-------------------------|
-| Tradier (via WebSocket) | ✅           | ✅     | ✅                            | ✅                           |  ✅                         |
-| Tastytrade (via WebSocket - DXLink Streamer)               |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         |
-| TradeStation (via HTTP Streaming)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         |
-| Schwab (via WebSocket)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         |
-| Interactive Brokers (via WebSocket)              |  Coming Soon            |  Coming Soon      |  Coming Soon                             |  Coming Soon                            |  Coming Soon                         |
+| Broker                | Black-Scholes | Greeks | Open Interest Based Exposures | Options-Book Based Exposures | Implied PDF Calculations | SPX / NDX 0DTE Data |
+|-----------------------|--------------|--------|-------------------------------|------------------------------|-------------------------|----------------------|
+| Tradier (via WebSocket) | ✅           | ✅     | ✅                            | ✅                           |  ✅                         | ✅                   |
+| Tastytrade (via WebSocket - DXLink Streamer)               |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
+| TradeStation (via HTTP Streaming)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
+| Schwab (via WebSocket)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
+| Interactive Brokers (via WebSocket)              |  Coming Soon            |  Coming Soon      |  Coming Soon                             |  Coming Soon                            |  Coming Soon                         | Coming Soon                   |
 
 Ideally all aspects of `floe` will be available for all brokers, but this will take time to determine as we work through the various data structures and formats that each broker provides.
 

@@ -1,4 +1,5 @@
 import { NormalizedOption, NormalizedTicker, OptionType } from '../../types';
+import { getUnderlyingFromOptionRoot } from '../../utils/indexOptions';
 import { parseOCCSymbol } from '../../utils/occ';
 import {
   BaseBrokerClient,
@@ -404,7 +405,8 @@ export class TradierClient extends BaseBrokerClient {
     for (const occSymbol of occSymbols) {
       try {
         const parsed = parseOCCSymbol(occSymbol);
-        const key = `${parsed.symbol}:${parsed.expiration.toISOString().split('T')[0]}`;
+        const underlying = getUnderlyingFromOptionRoot(parsed.symbol);
+        const key = `${underlying}:${parsed.expiration.toISOString().split('T')[0]}`;
         
         if (!groups.has(key)) {
           groups.set(key, new Set());
