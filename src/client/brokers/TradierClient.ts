@@ -268,19 +268,20 @@ export class TradierClient extends BaseBrokerClient {
    * @param symbols - Array of ticker symbols and/or OCC option symbols
    */
   subscribe(symbols: string[]): void {
+    // Add to tracked symbols first
+    symbols.forEach(s => this.subscribedSymbols.add(s));
+
     if (!this.connected || !this.ws || !this.streamSession) {
-      // Queue symbols for subscription when connected
-      symbols.forEach(s => this.subscribedSymbols.add(s));
+      // Symbols queued for subscription when connected
       return;
     }
 
-    // Add to tracked symbols
-    symbols.forEach(s => this.subscribedSymbols.add(s));
-
-    // Send subscription message
+    // Send subscription message with ALL subscribed symbols
+    // Tradier replaces the entire subscription list on each payload,
+    // so we must send the complete list every time
     const payload = {
       sessionid: this.streamSession.sessionid,
-      symbols: symbols,
+      symbols: Array.from(this.subscribedSymbols),  // send ALL symbols!
     };
 
     this.ws.send(JSON.stringify(payload));
@@ -297,7 +298,7 @@ export class TradierClient extends BaseBrokerClient {
    */
   async unsubscribe(symbols: string[]): Promise<void> {
     symbols.forEach(s => this.subscribedSymbols.delete(s));
-    
+
     // If connected, reconnect with the new symbol list
     if (this.connected) {
       await this.reconnectWithSymbols();
@@ -313,7 +314,7 @@ export class TradierClient extends BaseBrokerClient {
    */
   async unsubscribeFromAll(): Promise<void> {
     this.subscribedSymbols.clear();
-    
+
     // If connected, reconnect with empty symbol list
     if (this.connected) {
       await this.reconnectWithSymbols();
@@ -370,7 +371,7 @@ export class TradierClient extends BaseBrokerClient {
       }
 
       const data = await response.json() as TradierOptionsChainResponse;
-      
+
       if (!data.options || !data.options.option) {
         return [];
       }
@@ -407,7 +408,7 @@ export class TradierClient extends BaseBrokerClient {
         const parsed = parseOCCSymbol(occSymbol);
         const underlying = getUnderlyingFromOptionRoot(parsed.symbol);
         const key = `${underlying}:${parsed.expiration.toISOString().split('T')[0]}`;
-        
+
         if (!groups.has(key)) {
           groups.set(key, new Set());
         }
@@ -429,11 +430,11 @@ export class TradierClient extends BaseBrokerClient {
         if (symbols.has(item.symbol)) {
           // Store base open interest for live OI calculation (t=0 reference)
           this.baseOpenInterest.set(item.symbol, item.open_interest);
-          
+
           if (this.verbose) {
             console.log(`[Tradier:OI] Base OI set for ${item.symbol}: ${item.open_interest}`);
           }
-          
+
           // Initialize cumulative OI change if not already set
           if (!this.cumulativeOIChange.has(item.symbol)) {
             this.cumulativeOIChange.set(item.symbol, 0);
@@ -446,7 +447,7 @@ export class TradierClient extends BaseBrokerClient {
             existing.liveOpenInterest = this.calculateLiveOpenInterest(item.symbol);
             existing.volume = item.volume;
             existing.impliedVolatility = item.greeks?.mid_iv ?? existing.impliedVolatility;
-            
+
             // Also update bid/ask if not yet populated
             if (existing.bid === 0 && item.bid > 0) {
               existing.bid = item.bid;
@@ -624,7 +625,7 @@ export class TradierClient extends BaseBrokerClient {
   private handleMessage(data: string): void {
     try {
       const event: TradierStreamEvent = JSON.parse(data);
-      
+
       if (event.type === 'quote') {
         this.handleQuoteEvent(event as TradierQuoteEvent);
       } else if (event.type === 'trade') {
