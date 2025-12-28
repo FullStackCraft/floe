@@ -15,12 +15,17 @@ const EXAMPLES = {
   NormalizedOption,
 } from "@fullstackcraftllc/floe";
 
+// Helper to get a future expiration date (30 days out)
+const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+const expirationTimestamp = futureDate.getTime();
+const expiration = futureDate.toISOString().split("T")[0]; // "YYYY-MM-DD"
+
 // Sample option data (normally from your broker API)
 const sampleOptions: NormalizedOption[] = [
   {
     strike: 445,
-    expiration: "2024-01-19",
-    expirationTimestamp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    expiration,
+    expirationTimestamp,
     optionType: "call",
     bid: 8.50,
     ask: 8.70,
@@ -29,11 +34,16 @@ const sampleOptions: NormalizedOption[] = [
     volume: 1500,
     openInterest: 25000,
     impliedVolatility: 0.18,
+    underlying: "SPY",
+    occSymbol: "",
+    bidSize: 100,
+    askSize: 100,
+    timestamp: Date.now(),
   },
   {
     strike: 445,
-    expiration: "2024-01-19",
-    expirationTimestamp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    expiration,
+    expirationTimestamp,
     optionType: "put",
     bid: 3.20,
     ask: 3.40,
@@ -42,11 +52,16 @@ const sampleOptions: NormalizedOption[] = [
     volume: 2000,
     openInterest: 30000,
     impliedVolatility: 0.19,
+    underlying: "SPY",
+    occSymbol: "",
+    bidSize: 100,
+    askSize: 100,
+    timestamp: Date.now(),
   },
   {
     strike: 450,
-    expiration: "2024-01-19",
-    expirationTimestamp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    expiration,
+    expirationTimestamp,
     optionType: "call",
     bid: 5.80,
     ask: 6.00,
@@ -55,11 +70,16 @@ const sampleOptions: NormalizedOption[] = [
     volume: 3000,
     openInterest: 45000,
     impliedVolatility: 0.17,
+    underlying: "SPY",
+    occSymbol: "",
+    bidSize: 100,
+    askSize: 100,
+    timestamp: Date.now(),
   },
   {
     strike: 450,
-    expiration: "2024-01-19",
-    expirationTimestamp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    expiration,
+    expirationTimestamp,
     optionType: "put",
     bid: 5.50,
     ask: 5.70,
@@ -68,10 +88,51 @@ const sampleOptions: NormalizedOption[] = [
     volume: 2500,
     openInterest: 35000,
     impliedVolatility: 0.18,
+    underlying: "SPY",
+    occSymbol: "",
+    bidSize: 100,
+    askSize: 100,
+    timestamp: Date.now(),
+  },
+  {
+    strike: 455,
+    expiration,
+    expirationTimestamp,
+    optionType: "call",
+    bid: 3.40,
+    ask: 3.60,
+    mark: 3.50,
+    last: 3.45,
+    volume: 2800,
+    openInterest: 38000,
+    impliedVolatility: 0.16,
+    underlying: "SPY",
+    occSymbol: "",
+    bidSize: 100,
+    askSize: 100,
+    timestamp: Date.now(),
+  },
+  {
+    strike: 455,
+    expiration,
+    expirationTimestamp,
+    optionType: "put",
+    bid: 8.10,
+    ask: 8.30,
+    mark: 8.20,
+    last: 8.15,
+    volume: 1800,
+    openInterest: 28000,
+    impliedVolatility: 0.17,
+    underlying: "SPY",
+    occSymbol: "",
+    bidSize: 100,
+    askSize: 100,
+    timestamp: Date.now(),
   },
 ];
 
-// Bundle into an OptionChain
+// Bundle into the OptionChain type
 const chain: OptionChain = {
   symbol: "SPY",
   spot: 448.50,
@@ -82,7 +143,7 @@ const chain: OptionChain = {
 
 // Build IV surfaces
 const ivSurfaces = getIVSurfaces("blackscholes", "totalvariance", chain);
-console.log("IV Surfaces:", ivSurfaces);
+console.log("IV Surfaces built for", ivSurfaces.length, "option types");
 
 // Calculate exposures
 const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
@@ -92,6 +153,8 @@ for (const exp of exposures) {
   console.log("  Gamma Exposure:", exp.totalGammaExposure.toLocaleString());
   console.log("  Vanna Exposure:", exp.totalVannaExposure.toLocaleString());
   console.log("  Charm Exposure:", exp.totalCharmExposure.toLocaleString());
+  console.log("  Net Exposure:", exp.totalNetExposure.toLocaleString());
+  console.log("  Max Gamma Strike: $" + exp.strikeOfMaxGamma);
 }
 `,
   },
@@ -104,14 +167,14 @@ for (const exp of exposures) {
 const callPrice = blackScholes({
   spot: 100,
   strike: 105,
-  timeToExpiry: 0.25,
+  timeToExpiry: 0.25,  // 3 months
   riskFreeRate: 0.05,
   volatility: 0.20,
   optionType: "call",
   dividendYield: 0.02,
 });
 
-console.log("Call Price:", callPrice.toFixed(4));
+console.log("Call Price: $" + callPrice.toFixed(4));
 
 // Price a put option
 const putPrice = blackScholes({
@@ -124,7 +187,7 @@ const putPrice = blackScholes({
   dividendYield: 0.02,
 });
 
-console.log("Put Price:", putPrice.toFixed(4));
+console.log("Put Price: $" + putPrice.toFixed(4));
 
 // Verify put-call parity
 const S = 100;
@@ -137,9 +200,9 @@ const parityLHS = callPrice - putPrice;
 const parityRHS = S * Math.exp(-q * T) - K * Math.exp(-r * T);
 
 console.log("\\nPut-Call Parity Check:");
-console.log("  C - P =", parityLHS.toFixed(4));
-console.log("  S*e^(-qT) - K*e^(-rT) =", parityRHS.toFixed(4));
-console.log("  Difference:", Math.abs(parityLHS - parityRHS).toFixed(6));
+console.log("  C - P = " + parityLHS.toFixed(4));
+console.log("  S*e^(-qT) - K*e^(-rT) = " + parityRHS.toFixed(4));
+console.log("  Difference: " + Math.abs(parityLHS - parityRHS).toFixed(6));
 `,
   },
   "greeks": {
@@ -150,30 +213,33 @@ console.log("  Difference:", Math.abs(parityLHS - parityRHS).toFixed(6));
 const greeks = calculateGreeks({
   spot: 100,
   strike: 105,
-  timeToExpiry: 0.25,
+  timeToExpiry: 0.25,  // 3 months
   riskFreeRate: 0.05,
   volatility: 0.20,
   optionType: "call",
   dividendYield: 0.02,
 });
 
-console.log("=== First Order Greeks ===");
-console.log("Delta:", greeks.delta.toFixed(6));
-console.log("Theta:", greeks.theta.toFixed(6), "(per day)");
-console.log("Vega:", greeks.vega.toFixed(6), "(per 1% vol)");
-console.log("Rho:", greeks.rho.toFixed(6), "(per 1% rate)");
+console.log("=== Option Price ===");
+console.log("Price: $" + greeks.price.toFixed(4));
+
+console.log("\\n=== First Order Greeks ===");
+console.log("Delta: " + greeks.delta.toFixed(6));
+console.log("Theta: " + greeks.theta.toFixed(6) + " (per day)");
+console.log("Vega: " + greeks.vega.toFixed(6) + " (per 1% vol)");
+console.log("Rho: " + greeks.rho.toFixed(6) + " (per 1% rate)");
 
 console.log("\\n=== Second Order Greeks ===");
-console.log("Gamma:", greeks.gamma.toFixed(6));
-console.log("Vanna:", greeks.vanna.toFixed(6));
-console.log("Charm:", greeks.charm.toFixed(6), "(per day)");
-console.log("Volga:", greeks.volga.toFixed(6));
+console.log("Gamma: " + greeks.gamma.toFixed(6));
+console.log("Vanna: " + greeks.vanna.toFixed(6));
+console.log("Charm: " + greeks.charm.toFixed(6) + " (per day)");
+console.log("Volga: " + greeks.volga.toFixed(6));
 
 console.log("\\n=== Third Order Greeks ===");
-console.log("Speed:", greeks.speed.toFixed(8));
-console.log("Zomma:", greeks.zomma.toFixed(8));
-console.log("Color:", greeks.color.toFixed(8));
-console.log("Ultima:", greeks.ultima.toFixed(8));
+console.log("Speed: " + greeks.speed.toFixed(8));
+console.log("Zomma: " + greeks.zomma.toFixed(8));
+console.log("Color: " + greeks.color.toFixed(8));
+console.log("Ultima: " + greeks.ultima.toFixed(8));
 `,
   },
   "implied-volatility": {
@@ -183,13 +249,14 @@ console.log("Ultima:", greeks.ultima.toFixed(8));
 
 const spot = 100;
 const strike = 105;
-const timeToExpiry = 0.25;
+const timeToExpiry = 0.25;  // 3 months
 const riskFreeRate = 0.05;
 const dividendYield = 0.02;
 const marketPrice = 3.50;
 
 // Calculate IV from market price
-const iv = calculateImpliedVolatility(
+// Note: calculateImpliedVolatility returns IV as a percentage (e.g., 20.0 for 20%)
+const ivPercent = calculateImpliedVolatility(
   marketPrice,
   spot,
   strike,
@@ -199,23 +266,24 @@ const iv = calculateImpliedVolatility(
   "call"
 );
 
-console.log("Market Price:", marketPrice);
-console.log("Implied Volatility:", (iv * 100).toFixed(2) + "%");
+console.log("Market Price: $" + marketPrice);
+console.log("Implied Volatility: " + ivPercent.toFixed(2) + "%");
 
 // Verify by repricing with the calculated IV
+// Note: blackScholes expects volatility as decimal (0.20 for 20%)
 const repricedValue = blackScholes({
   spot,
   strike,
   timeToExpiry,
   riskFreeRate,
-  volatility: iv,
+  volatility: ivPercent / 100,  // Convert percentage to decimal
   optionType: "call",
   dividendYield,
 });
 
 console.log("\\nVerification:");
-console.log("Repriced Value:", repricedValue.toFixed(4));
-console.log("Difference:", Math.abs(marketPrice - repricedValue).toFixed(6));
+console.log("Repriced Value: $" + repricedValue.toFixed(4));
+console.log("Difference: $" + Math.abs(marketPrice - repricedValue).toFixed(6));
 `,
   },
   "implied-pdf": {
@@ -228,18 +296,21 @@ console.log("Difference:", Math.abs(marketPrice - repricedValue).toFixed(6));
   NormalizedOption,
 } from "@fullstackcraftllc/floe";
 
+// Dynamic expiration: 7 days from now
+const futureDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+const expirationTimestamp = futureDate.getTime();
+const expiration = futureDate.toISOString().split("T")[0];
+
 // Sample call options for a single expiration
 // In practice, these come from your broker API
-const expirationTimestamp = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days out
-
 const callOptions: NormalizedOption[] = [
-  { strike: 490, bid: 15.20, ask: 15.50, mark: 15.35, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 15.35, volume: 100, openInterest: 1000, impliedVolatility: 0.20, timestamp: Date.now(), bidSize: 10, askSize: 10 },
-  { strike: 495, bid: 11.40, ask: 11.70, mark: 11.55, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 11.55, volume: 100, openInterest: 1000, impliedVolatility: 0.19, timestamp: Date.now(), bidSize: 10, askSize: 10 },
-  { strike: 500, bid: 8.10, ask: 8.40, mark: 8.25, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 8.25, volume: 100, openInterest: 1000, impliedVolatility: 0.18, timestamp: Date.now(), bidSize: 10, askSize: 10 },
-  { strike: 505, bid: 5.30, ask: 5.60, mark: 5.45, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 5.45, volume: 100, openInterest: 1000, impliedVolatility: 0.17, timestamp: Date.now(), bidSize: 10, askSize: 10 },
-  { strike: 510, bid: 3.10, ask: 3.40, mark: 3.25, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 3.25, volume: 100, openInterest: 1000, impliedVolatility: 0.16, timestamp: Date.now(), bidSize: 10, askSize: 10 },
-  { strike: 515, bid: 1.60, ask: 1.90, mark: 1.75, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 1.75, volume: 100, openInterest: 1000, impliedVolatility: 0.15, timestamp: Date.now(), bidSize: 10, askSize: 10 },
-  { strike: 520, bid: 0.70, ask: 0.95, mark: 0.83, optionType: "call", expirationTimestamp, expiration: "", underlying: "QQQ", occSymbol: "", last: 0.83, volume: 100, openInterest: 1000, impliedVolatility: 0.14, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 490, bid: 15.20, ask: 15.50, mark: 15.35, optionType: "call", expirationTimestamp, expiration, underlying: "QQQ", occSymbol: "", last: 15.35, volume: 100, openInterest: 1000, impliedVolatility: 0.20, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 495, bid: 11.40, ask: 11.70, mark: 11.55, optionType: "call", expirationTimestamp, expiration, underlying: "QQQ", occSymbol: "", last: 11.55, volume: 100, openInterest: 1000, impliedVolatility: 0.19, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 500, bid: 8.10, ask: 8.40, mark: 8.25, optionType: "call", expirationTimestamp, expiration, underlying: "QQQ", occSymbol: "", last: 8.25, volume: 100, openInterest: 1000, impliedVolatility: 0.18, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 505, bid: 5.30, ask: 5.60, mark: 5.45, optionType: "call", expirationTimestamp, expiration, underlying: "QQQ", occSymbol: "", last: 5.45, volume: 100, openInterest: 1000, impliedVolatility: 0.17, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 510, bid: 3.10, ask: 3.40, mark: 3.25, optionType: "call", expirationTimestamp, expiration, underlying: "QQQ", occSymbol: "", last: 3.25, volume: 100, openInterest: 1000, impliedVolatility: 0.16, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 515, bid: 1.60, ask: 1.90, mark: 1.75, optionType: "call", expirationTimestamp, expiration, underlying: "QQQ", occSymbol: "", last: 1.75, volume: 100, openInterest: 1000, impliedVolatility: 0.15, timestamp: Date.now(), bidSize: 10, askSize: 10 },
+  { strike: 520, bid: 0.70, ask: 0.95, mark: 0.83, optionType: "call", expirationTimestamp, expiration, underlying: "QQQ", occSymbol: "", last: 0.83, volume: 100, openInterest: 1000, impliedVolatility: 0.14, timestamp: Date.now(), bidSize: 10, askSize: 10 },
 ];
 
 const spot = 502.50;
@@ -251,8 +322,9 @@ if (result.success) {
   const dist = result.distribution;
   
   console.log("=== Implied Probability Distribution ===");
-  console.log("Symbol:", dist.symbol);
+  console.log("Symbol: " + dist.symbol);
   console.log("Spot Price: $" + dist.underlyingPrice);
+  console.log("Expiration: " + new Date(dist.expiryDate).toDateString());
   console.log("");
   
   console.log("=== Summary Statistics ===");
@@ -260,7 +332,7 @@ if (result.success) {
   console.log("Median Price: $" + dist.medianPrice);
   console.log("Expected Value: $" + dist.expectedValue.toFixed(2));
   console.log("Expected Move: ±$" + dist.expectedMove.toFixed(2));
-  console.log("Tail Skew:", dist.tailSkew.toFixed(3));
+  console.log("Tail Skew: " + dist.tailSkew.toFixed(3));
   console.log("");
   
   console.log("=== Directional Probabilities ===");
@@ -288,8 +360,79 @@ if (result.success) {
     }
   }
 } else {
-  console.log("Error:", result.error);
+  console.log("Error: " + result.error);
 }
+`,
+  },
+  "occ-symbols": {
+    title: "OCC Symbol Utilities",
+    description: "Build and parse OCC option symbols, generate strike ranges",
+    code: `import {
+  buildOCCSymbol,
+  parseOCCSymbol,
+  generateStrikesAroundSpot,
+  generateOCCSymbolsAroundSpot,
+} from "@fullstackcraftllc/floe";
+
+// Dynamic expiration: 30 days from now (next monthly)
+const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+const expiration = futureDate.toISOString().split("T")[0];
+
+console.log("=== Build OCC Symbols ===");
+
+// Build a call symbol
+const callSymbol = buildOCCSymbol({
+  symbol: "AAPL",
+  expiration,
+  optionType: "call",
+  strike: 150,
+});
+console.log("AAPL $150 Call: " + callSymbol);
+
+// Build a put symbol
+const putSymbol = buildOCCSymbol({
+  symbol: "AAPL",
+  expiration,
+  optionType: "put",
+  strike: 145.50,
+});
+console.log("AAPL $145.50 Put: " + putSymbol);
+
+console.log("\\n=== Parse OCC Symbols ===");
+
+// Parse the symbols we just created
+const parsedCall = parseOCCSymbol(callSymbol);
+console.log("Parsed Call:");
+console.log("  Symbol: " + parsedCall.symbol);
+console.log("  Strike: $" + parsedCall.strike);
+console.log("  Type: " + parsedCall.optionType);
+console.log("  Expiration: " + parsedCall.expiration.toDateString());
+
+console.log("\\n=== Generate Strikes Around Spot ===");
+
+const spot = 150.25;
+const strikes = generateStrikesAroundSpot({
+  spot,
+  strikesAbove: 5,
+  strikesBelow: 5,
+  strikeIncrementInDollars: 2.5,
+});
+console.log("Strikes around $" + spot + ":");
+console.log("  " + strikes.join(", "));
+
+console.log("\\n=== Generate Full OCC Symbol Set ===");
+
+const symbols = generateOCCSymbolsAroundSpot("SPY", expiration, 450, {
+  strikesAbove: 3,
+  strikesBelow: 3,
+  strikeIncrementInDollars: 5,
+});
+
+console.log("SPY option symbols (3 above/below $450, $5 increments):");
+for (const sym of symbols.slice(0, 8)) {
+  console.log("  " + sym);
+}
+console.log("  ... and " + (symbols.length - 8) + " more");
 `,
   },
 };

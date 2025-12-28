@@ -8,7 +8,9 @@ order: 4
 
 The implied probability density function (PDF) represents the market's collective view of where an asset's price will be at expiration. It's derived from option prices using **Breeden-Litzenberger** methodology—computing the second derivative of call prices with respect to strike price.
 
-This gives you:
+Take these raw values with a grain of salt, as the quite literally represent the 'neutral, risk free _closing_ price' of the underlying ONLY.
+
+The implied PDF gives you:
 - **Mode**: Most likely price at expiration
 - **Median**: 50th percentile price
 - **Expected Move**: Standard deviation of the distribution
@@ -166,7 +168,7 @@ if (dist.tailSkew > 1.2) {
 
 ## Visualizing the PDF
 
-Export the strike probabilities for charting:
+Two examples using the console to visualize the distribution:
 
 ```typescript
 // Get the raw PDF data for visualization

@@ -15,7 +15,7 @@ import { blackScholes } from "@fullstackcraftllc/floe";
 const params = {
   spot: 100,
   strike: 105,
-  timeToExpiry: 0.25,  // 3 months
+  timeToExpiry: 0.25,  // in years, this example 0.25 = ~3 months
   riskFreeRate: 0.05,
   volatility: 0.20
 };
@@ -50,33 +50,8 @@ const priceWithDividend = blackScholes({
   riskFreeRate: 0.05,
   volatility: 0.25,
   optionType: "call",
-  dividendYield: 0.02  // 2% annual dividend yield
+  dividendYield: 0.02  // add 2% annual dividend yield
 });
 
 console.log(`ATM Call with 2% dividend: $${priceWithDividend.toFixed(2)}`);
-```
-
-## Pricing an Options Chain
-
-Calculate prices across multiple strikes:
-
-```typescript
-import { blackScholes } from "@fullstackcraftllc/floe";
-
-const spot = 100;
-const strikes = [90, 95, 100, 105, 110];
-const baseParams = {
-  spot,
-  timeToExpiry: 0.25,
-  riskFreeRate: 0.05,
-  volatility: 0.20
-};
-
-const chain = strikes.map(strike => ({
-  strike,
-  call: blackScholes({ ...baseParams, strike, optionType: "call" }),
-  put: blackScholes({ ...baseParams, strike, optionType: "put" })
-}));
-
-console.table(chain);
 ```

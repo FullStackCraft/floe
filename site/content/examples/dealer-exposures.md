@@ -12,9 +12,9 @@ Dealers who sell options to customers accumulate exposure that they must hedge. 
 
 - **Gamma Exposure (GEX)**: Shows how much dealers need to buy/sell the underlying as price moves. Negative GEX means dealers buy dips and sell rallies (stabilizing). Positive GEX means dealers sell dips and buy rallies (destabilizing).
 
-- **Vanna Exposure**: Sensitivity to changes in implied volatility. Shows how dealer hedging changes when IV moves.
+- **Vanna Exposure (VEX)**: Sensitivity to changes in implied volatility. Shows how dealer hedging changes when IV moves.
 
-- **Charm Exposure**: How delta (and therefore hedging needs) changes as time passes. Important for understanding end-of-day and expiration flows.
+- **Charm Exposure (CEX)**: How delta (and therefore hedging needs) changes as time passes. Important for understanding end-of-day and expiration flows.
 
 ## Complete Exposure Calculation
 
