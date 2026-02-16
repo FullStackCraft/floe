@@ -209,7 +209,7 @@ export const OPEX_CONFIG: ExposureAdjustmentConfig = {
  * @param symbol - Underlying ticker symbol
  * @param underlyingPrice - Current spot price
  * @param callOptions - Call options for a single expiry
- * @param exposures - Exposure metrics from calculateGammaVannaCharmExposures()
+ * @param exposures - Canonical exposure metrics from calculateGammaVannaCharmExposures()
  * @param config - Adjustment configuration (uses defaults if not provided)
  * @returns Baseline and adjusted PDFs with comparison metrics
  * 
@@ -217,7 +217,10 @@ export const OPEX_CONFIG: ExposureAdjustmentConfig = {
  * ```typescript
  * // Get exposures first
  * const allExposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
- * const expiryExposures = allExposures.find(e => e.expiration === targetExpiry);
+ * const expiry = allExposures.find(e => e.expiration === targetExpiry);
+ * const expiryExposures = expiry
+ *   ? { spotPrice: expiry.spotPrice, expiration: expiry.expiration, ...expiry.canonical }
+ *   : undefined;
  * 
  * // Calculate adjusted PDF
  * const result = estimateExposureAdjustedPDF(

@@ -204,7 +204,11 @@ import {
 } from "@fullstackcraftllc/floe";
 
 const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
-const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposureVariants = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+
+// exposureVariants contains canonical, stateWeighted, and flowDelta modes.
+// Project canonical mode if downstream code expects ExposurePerExpiry.
+const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
 
 for (const expiry of exposures) {
   console.log(`Expiration: ${new Date(expiry.expiration).toDateString()}`);
@@ -306,7 +310,8 @@ import {
 } from "@fullstackcraftllc/floe";
 
 const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
-const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposureVariants = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
 
 // Use call options for the same expiration as the exposures
 const callOptions = chain.options.filter(
@@ -408,7 +413,8 @@ import {
 } from "@fullstackcraftllc/floe";
 
 const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
-const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposureVariants = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
 const callSurface = ivSurfaces.find(s => s.putCall === 'call');
 
 const curve = computeHedgeImpulseCurve(
@@ -848,7 +854,62 @@ interface IVSurface {
 }
 ```
 
-### ExposurePerExpiry
+### ExposureVector
+
+```typescript
+interface ExposureVector {
+  gammaExposure: number;
+  vannaExposure: number;
+  charmExposure: number;
+  netExposure: number;
+}
+```
+
+### ExposureModeBreakdown
+
+```typescript
+interface ExposureModeBreakdown {
+  totalGammaExposure: number;
+  totalVannaExposure: number;
+  totalCharmExposure: number;
+  totalNetExposure: number;
+  strikeOfMaxGamma: number;
+  strikeOfMinGamma: number;
+  strikeOfMaxVanna: number;
+  strikeOfMinVanna: number;
+  strikeOfMaxCharm: number;
+  strikeOfMinCharm: number;
+  strikeOfMaxNet: number;
+  strikeOfMinNet: number;
+  strikeExposures: StrikeExposure[];
+}
+```
+
+### StrikeExposureVariants
+
+```typescript
+interface StrikeExposureVariants {
+  strikePrice: number;
+  canonical: ExposureVector;
+  stateWeighted: ExposureVector;
+  flowDelta: ExposureVector;
+}
+```
+
+### ExposureVariantsPerExpiry
+
+```typescript
+interface ExposureVariantsPerExpiry {
+  spotPrice: number;
+  expiration: number;
+  canonical: ExposureModeBreakdown;
+  stateWeighted: ExposureModeBreakdown;
+  flowDelta: ExposureModeBreakdown;
+  strikeExposureVariants: StrikeExposureVariants[];
+}
+```
+
+### ExposurePerExpiry (Canonical Projection)
 
 ```typescript
 interface ExposurePerExpiry {

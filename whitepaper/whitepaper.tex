@@ -132,23 +132,23 @@ Where $\Gamma_C$ and $\Gamma_P$ are the gamma of the call and put contracts at t
 
 \textbf{Vanna Exposure (VEX)}:
 \begin{align}
-\text{VEX}_K = \left(-\text{OI}_C \cdot \text{Vanna}_C + \text{OI}_P \cdot \text{Vanna}_P\right) \cdot (S \cdot 100) \cdot \sigma_{\text{IV}} \cdot 0.01
+\text{VEX}_K = \left(-\text{OI}_C \cdot \text{Vanna}_C + \text{OI}_P \cdot \text{Vanna}_P\right) \cdot (S \cdot 100) \cdot 0.01
 \end{align}
 
 Reducing constants:
 
 \begin{align}
-\text{VEX}_K = \left(-\text{OI}_C \cdot \text{Vanna}_C + \text{OI}_P \cdot \text{Vanna}_P\right) \cdot S \cdot \sigma_{\text{IV}}
+\text{VEX}_K = \left(-\text{OI}_C \cdot \text{Vanna}_C + \text{OI}_P \cdot \text{Vanna}_P\right) \cdot S
 \end{align}
 
-Where $\text{Vanna}_C$ and $\text{Vanna}_P$ are the vanna of the call and put contracts at that expiration and strike, respectively, and $\sigma_{\text{IV}}$ is the smoothed implied volatility at that strike.
+Where $\text{Vanna}_C$ and $\text{Vanna}_P$ are the vanna of the call and put contracts at that expiration and strike, respectively. The factor $0.01$ converts the measure to dollars per 1 volatility point ($\Delta \sigma = 0.01$).
 
 \textbf{Charm Exposure (CEX)}:
 \begin{align}
-\text{CEX}_K = \left(-\text{OI}_C \cdot \text{Charm}_C + \text{OI}_P \cdot \text{Charm}_P\right) \cdot (S \cdot 100) \cdot 365\tau
+\text{CEX}_K = \left(-\text{OI}_C \cdot \text{Charm}_C + \text{OI}_P \cdot \text{Charm}_P\right) \cdot (S \cdot 100)
 \end{align}
 
-The factor of 100 accounts for contract multiplier. The $0.01$ factor normalizes to a 1\% move.
+The factor of 100 accounts for contract multiplier. Since charm is computed as delta decay per day, canonical CEX is dollars per 1 day of time passage (without additional $\tau$ scaling).
 
 \subsection{Total Exposures}
 

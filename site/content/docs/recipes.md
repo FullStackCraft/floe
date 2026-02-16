@@ -34,7 +34,8 @@ const chain: OptionChain = {
 const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
 
 // Calculate dealer gamma, vanna, and charm exposures
-const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposureVariants = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
 
 // Each expiration now has aggregated exposure metrics
 for (const expiry of exposures) {

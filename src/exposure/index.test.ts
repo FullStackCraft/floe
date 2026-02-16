@@ -1,6 +1,10 @@
-import { calculateGammaVannaCharmExposures, calculateSharesNeededToCover } from '../exposure';
+import {
+  calculateGammaVannaCharmExposures,
+  calculateSharesNeededToCover,
+} from '../exposure';
+import { calculateGreeks } from '../blackscholes';
 import { getIVSurfaces } from '../volatility';
-import { OptionChain, NormalizedOption } from '../types';
+import { OptionChain, NormalizedOption, ExposureCalculationOptions, ExposurePerExpiry } from '../types';
 
 // Helper to create a mock option
 function createOption(
@@ -8,7 +12,8 @@ function createOption(
   optionType: 'call' | 'put',
   expirationTimestamp: number,
   mark: number,
-  openInterest: number = 1000
+  openInterest: number = 1000,
+  liveOpenInterest?: number
 ): NormalizedOption {
   return {
     occSymbol: `TEST${new Date(expirationTimestamp).toISOString().slice(2, 10).replace(/-/g, '')}${optionType === 'call' ? 'C' : 'P'}${String(strike * 1000).padStart(8, '0')}`,
@@ -25,6 +30,7 @@ function createOption(
     last: mark,
     volume: 100,
     openInterest,
+    liveOpenInterest,
     impliedVolatility: 0.20,
     timestamp: Date.now(),
   };
@@ -32,6 +38,19 @@ function createOption(
 
 // Create a future expiration (30 days from now)
 const futureExpiration = Date.now() + 30 * 24 * 60 * 60 * 1000;
+
+function getCanonicalExposures(
+  chain: OptionChain,
+  ivSurfaces: ReturnType<typeof getIVSurfaces>,
+  options: ExposureCalculationOptions = {}
+): ExposurePerExpiry[] {
+  const variants = calculateGammaVannaCharmExposures(chain, ivSurfaces, options);
+  return variants.map(v => ({
+    spotPrice: v.spotPrice,
+    expiration: v.expiration,
+    ...v.canonical,
+  }));
+}
 
 describe('calculateGammaVannaCharmExposures', () => {
   it('should calculate exposures for a simple option chain', () => {
@@ -51,7 +70,7 @@ describe('calculateGammaVannaCharmExposures', () => {
     };
 
     const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
-    const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+    const exposures = getCanonicalExposures(chain, ivSurfaces);
 
     expect(exposures.length).toBe(1); // One expiration
     expect(exposures[0].spotPrice).toBe(100);
@@ -73,7 +92,7 @@ describe('calculateGammaVannaCharmExposures', () => {
     };
 
     const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
-    const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+    const exposures = getCanonicalExposures(chain, ivSurfaces);
 
     // Should have 2 strike exposures (95 and 100)
     expect(exposures[0].strikeExposures.length).toBe(2);
@@ -102,7 +121,7 @@ describe('calculateGammaVannaCharmExposures', () => {
     };
 
     const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
-    const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+    const exposures = getCanonicalExposures(chain, ivSurfaces);
 
     const exp = exposures[0];
     expect(typeof exp.totalGammaExposure).toBe('number');
@@ -134,7 +153,7 @@ describe('calculateGammaVannaCharmExposures', () => {
     };
 
     const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
-    const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+    const exposures = getCanonicalExposures(chain, ivSurfaces);
 
     const exp = exposures[0];
     expect([95, 100, 105]).toContain(exp.strikeOfMaxGamma);
@@ -163,7 +182,7 @@ describe('calculateGammaVannaCharmExposures', () => {
     };
 
     const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
-    const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+    const exposures = getCanonicalExposures(chain, ivSurfaces);
 
     expect(exposures.length).toBe(2);
     expect(exposures[0].expiration).toBe(exp1);
@@ -187,7 +206,7 @@ describe('calculateGammaVannaCharmExposures', () => {
     };
 
     const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
-    const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+    const exposures = getCanonicalExposures(chain, ivSurfaces);
 
     // Should only have the future expiration
     expect(exposures.length).toBe(1);
@@ -212,7 +231,7 @@ describe('calculateGammaVannaCharmExposures', () => {
     };
 
     const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
-    const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+    const exposures = getCanonicalExposures(chain, ivSurfaces);
 
     // Should only have strike 95 (the only complete pair)
     expect(exposures[0].strikeExposures.length).toBe(1);
@@ -229,9 +248,190 @@ describe('calculateGammaVannaCharmExposures', () => {
     };
 
     const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
-    const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+    const exposures = getCanonicalExposures(chain, ivSurfaces);
 
     expect(exposures.length).toBe(0);
+  });
+
+  it('should keep default API aligned to canonical variant', () => {
+    const now = Date.now();
+    const expiration = now + 10 * 24 * 60 * 60 * 1000;
+
+    const chain: OptionChain = {
+      symbol: 'TEST',
+      spot: 100,
+      riskFreeRate: 0.05,
+      dividendYield: 0.02,
+      options: [
+        createOption(100, 'call', expiration, 4.5, 10000),
+        createOption(100, 'put', expiration, 4.0, 9000),
+      ],
+    };
+
+    const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
+    const canonical = getCanonicalExposures(chain, ivSurfaces, { asOfTimestamp: now });
+    const variants = calculateGammaVannaCharmExposures(chain, ivSurfaces, { asOfTimestamp: now });
+
+    expect(canonical.length).toBe(1);
+    expect(variants.length).toBe(1);
+    expect(canonical[0].totalGammaExposure).toBeCloseTo(variants[0].canonical.totalGammaExposure, 8);
+    expect(canonical[0].totalVannaExposure).toBeCloseTo(variants[0].canonical.totalVannaExposure, 8);
+    expect(canonical[0].totalCharmExposure).toBeCloseTo(variants[0].canonical.totalCharmExposure, 8);
+  });
+
+  it('should compute canonical VEX/CEX without IV-level or time-to-expiry weighting', () => {
+    const now = Date.now();
+    const expiration = now + 7 * 24 * 60 * 60 * 1000;
+
+    const callOI = 12000;
+    const putOI = 8000;
+
+    const chain: OptionChain = {
+      symbol: 'TEST',
+      spot: 100,
+      riskFreeRate: 0.05,
+      dividendYield: 0.02,
+      options: [
+        createOption(100, 'call', expiration, 4.5, callOI),
+        createOption(100, 'put', expiration, 4.0, putOI),
+      ],
+    };
+
+    const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
+    const variants = calculateGammaVannaCharmExposures(chain, ivSurfaces, { asOfTimestamp: now });
+    const row = variants[0];
+
+    const callIV = ivSurfaces.find(s => s.expirationDate === expiration && s.putCall === 'call')?.smoothedIVs[0] ?? 0;
+    const putIV = ivSurfaces.find(s => s.expirationDate === expiration && s.putCall === 'put')?.smoothedIVs[0] ?? 0;
+    const timeToExpiry = (expiration - now) / (365 * 24 * 60 * 60 * 1000);
+
+    const callGreeks = calculateGreeks({
+      spot: chain.spot,
+      strike: 100,
+      timeToExpiry,
+      volatility: callIV / 100,
+      riskFreeRate: chain.riskFreeRate,
+      dividendYield: chain.dividendYield,
+      optionType: 'call',
+    });
+
+    const putGreeks = calculateGreeks({
+      spot: chain.spot,
+      strike: 100,
+      timeToExpiry,
+      volatility: putIV / 100,
+      riskFreeRate: chain.riskFreeRate,
+      dividendYield: chain.dividendYield,
+      optionType: 'put',
+    });
+
+    const expectedCanonicalVanna =
+      -callOI * callGreeks.vanna * (chain.spot * 100) * 0.01 +
+      putOI * putGreeks.vanna * (chain.spot * 100) * 0.01;
+    const expectedCanonicalCharm =
+      -callOI * callGreeks.charm * (chain.spot * 100) +
+      putOI * putGreeks.charm * (chain.spot * 100);
+
+    expect(row.canonical.totalVannaExposure).toBeCloseTo(expectedCanonicalVanna, 6);
+    expect(row.canonical.totalCharmExposure).toBeCloseTo(expectedCanonicalCharm, 6);
+  });
+
+  it('should expose state-weighted mode separately from canonical mode', () => {
+    const now = Date.now();
+    const expiration = now + 5 * 24 * 60 * 60 * 1000;
+
+    const chain: OptionChain = {
+      symbol: 'TEST',
+      spot: 100,
+      riskFreeRate: 0.05,
+      dividendYield: 0.02,
+      options: [
+        createOption(95, 'call', expiration, 7.5, 5000),
+        createOption(95, 'put', expiration, 2.0, 5000),
+        createOption(100, 'call', expiration, 4.5, 10000),
+        createOption(100, 'put', expiration, 4.0, 10000),
+      ],
+    };
+
+    const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
+    const variants = calculateGammaVannaCharmExposures(chain, ivSurfaces, { asOfTimestamp: now });
+    const row = variants[0];
+
+    // Gamma remains canonical in state-weighted mode.
+    expect(row.stateWeighted.totalGammaExposure).toBeCloseTo(row.canonical.totalGammaExposure, 8);
+    // Vanna and charm are expected to differ due to state weighting.
+    expect(row.stateWeighted.totalVannaExposure).not.toBeCloseTo(row.canonical.totalVannaExposure, 4);
+    expect(row.stateWeighted.totalCharmExposure).not.toBeCloseTo(row.canonical.totalCharmExposure, 4);
+  });
+
+  it('should compute flow delta mode from live open interest changes', () => {
+    const now = Date.now();
+    const expiration = now + 3 * 24 * 60 * 60 * 1000;
+
+    const callOI = 10000;
+    const putOI = 9000;
+    const callLiveOI = 10200; // +200 flow
+    const putLiveOI = 8800;   // -200 flow
+
+    const chain: OptionChain = {
+      symbol: 'TEST',
+      spot: 100,
+      riskFreeRate: 0.05,
+      dividendYield: 0.02,
+      options: [
+        createOption(100, 'call', expiration, 4.5, callOI, callLiveOI),
+        createOption(100, 'put', expiration, 4.0, putOI, putLiveOI),
+      ],
+    };
+
+    const ivSurfaces = getIVSurfaces('blackscholes', 'none', chain);
+    const variants = calculateGammaVannaCharmExposures(chain, ivSurfaces, { asOfTimestamp: now });
+    const row = variants[0];
+
+    expect(Math.abs(row.flowDelta.totalGammaExposure)).toBeGreaterThan(0);
+    expect(Math.abs(row.flowDelta.totalVannaExposure)).toBeGreaterThan(0);
+    expect(Math.abs(row.flowDelta.totalCharmExposure)).toBeGreaterThan(0);
+
+    const callIV = ivSurfaces.find(s => s.expirationDate === expiration && s.putCall === 'call')?.smoothedIVs[0] ?? 0;
+    const putIV = ivSurfaces.find(s => s.expirationDate === expiration && s.putCall === 'put')?.smoothedIVs[0] ?? 0;
+    const timeToExpiry = (expiration - now) / (365 * 24 * 60 * 60 * 1000);
+
+    const callGreeks = calculateGreeks({
+      spot: chain.spot,
+      strike: 100,
+      timeToExpiry,
+      volatility: callIV / 100,
+      riskFreeRate: chain.riskFreeRate,
+      dividendYield: chain.dividendYield,
+      optionType: 'call',
+    });
+
+    const putGreeks = calculateGreeks({
+      spot: chain.spot,
+      strike: 100,
+      timeToExpiry,
+      volatility: putIV / 100,
+      riskFreeRate: chain.riskFreeRate,
+      dividendYield: chain.dividendYield,
+      optionType: 'put',
+    });
+
+    const callDeltaOI = callLiveOI - callOI;
+    const putDeltaOI = putLiveOI - putOI;
+
+    const expectedFlowGamma =
+      -callDeltaOI * callGreeks.gamma * (chain.spot * 100) * chain.spot * 0.01 +
+      putDeltaOI * putGreeks.gamma * (chain.spot * 100) * chain.spot * 0.01;
+    const expectedFlowVanna =
+      -callDeltaOI * callGreeks.vanna * (chain.spot * 100) * 0.01 +
+      putDeltaOI * putGreeks.vanna * (chain.spot * 100) * 0.01;
+    const expectedFlowCharm =
+      -callDeltaOI * callGreeks.charm * (chain.spot * 100) +
+      putDeltaOI * putGreeks.charm * (chain.spot * 100);
+
+    expect(row.flowDelta.totalGammaExposure).toBeCloseTo(expectedFlowGamma, 6);
+    expect(row.flowDelta.totalVannaExposure).toBeCloseTo(expectedFlowVanna, 6);
+    expect(row.flowDelta.totalCharmExposure).toBeCloseTo(expectedFlowCharm, 6);
   });
 });
 

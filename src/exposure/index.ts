@@ -1,95 +1,96 @@
-import { 
+import {
   OptionChain,
-  ExposurePerExpiry, 
   StrikeExposure,
+  StrikeExposureVariants,
+  ExposureVariantsPerExpiry,
+  ExposureCalculationOptions,
+  ExposureModeBreakdown,
+  ExposureVector,
   IVSurface,
   MILLISECONDS_PER_YEAR,
-  DAYS_PER_YEAR
+  DAYS_PER_YEAR,
 } from '../types';
-import { calculateGreeks, getTimeToExpirationInYears } from '../blackscholes';
+import { calculateGreeks } from '../blackscholes';
 import { getIVForStrike } from '../volatility';
 
+type ExposureMode = 'canonical' | 'stateWeighted' | 'flowDelta';
+
 /**
- * Calculate Gamma, Vanna, and Charm exposures for an option chain
- * 
- * @param chain - Option chain with market context (spot, rates, options)
- * @param ivSurfaces - IV surfaces for all expirations
- * @returns Array of exposure metrics per expiration
- * 
- * @example
- * ```typescript
- * const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
- * ```
+ * Calculate canonical, state-weighted, and flow-delta exposure variants.
+ *
+ * canonical:
+ * - GEX: dollars per 1% underlying move
+ * - VEX: dollars per 1 vol-point move
+ * - CEX: dollars per 1 day of time decay
+ *
+ * stateWeighted:
+ * - Gamma: same as canonical (spot is already the state variable)
+ * - Vanna: canonical vanna weighted by strike IV level
+ * - Charm: canonical charm weighted by days-to-expiration
+ *
+ * flowDelta:
+ * - Canonical exposure formulas using OI deltas:
+ *   (liveOpenInterest - openInterest)
  */
 export function calculateGammaVannaCharmExposures(
   chain: OptionChain,
   ivSurfaces: IVSurface[],
-): ExposurePerExpiry[] {
-  const { spot, riskFreeRate, dividendYield, options } = chain;
-  const exposureRows: ExposurePerExpiry[] = [];
+  options: ExposureCalculationOptions = {},
+): ExposureVariantsPerExpiry[] {
+  const { spot, riskFreeRate, dividendYield, options: chainOptions } = chain;
+  const asOfTimestamp = options.asOfTimestamp ?? Date.now();
+  const exposureRows: ExposureVariantsPerExpiry[] = [];
 
-  // Get unique expirations from options
   const expirationsSet = new Set<number>();
-  for (const option of options) {
+  for (const option of chainOptions) {
     expirationsSet.add(option.expirationTimestamp);
   }
   const expirations = Array.from(expirationsSet).sort((a, b) => a - b);
 
-  // Loop through all expirations
+  const putOptionsByKey = new Map<string, OptionChain['options'][number]>();
+  for (const option of chainOptions) {
+    if (option.optionType === 'put') {
+      putOptionsByKey.set(getOptionKey(option.expirationTimestamp, option.strike), option);
+    }
+  }
+
   for (const expiration of expirations) {
-    // Skip any expiration that is in the past
-    if (expiration < Date.now()) {
+    if (expiration < asOfTimestamp) {
       continue;
     }
 
-    // Reset totals for this expiration
-    let totalGammaExposure = 0.0;
-    let totalVannaExposure = 0.0;
-    let totalCharmExposure = 0.0;
-    let strikeOfMaxGamma = 0.0;
-    let strikeOfMinGamma = 0.0;
-    let strikeOfMaxVanna = 0.0;
-    let strikeOfMinVanna = 0.0;
-    let strikeOfMaxCharm = 0.0;
-    let strikeOfMinCharm = 0.0;
-    let strikeOfMaxNet = 0.0;
-    let strikeOfMinNet = 0.0;
+    const timeToExpirationInYears = (expiration - asOfTimestamp) / MILLISECONDS_PER_YEAR;
+    if (timeToExpirationInYears <= 0) {
+      continue;
+    }
 
-    const strikeExposures: StrikeExposure[] = [];
+    const timeToExpirationInDays = Math.max(timeToExpirationInYears * DAYS_PER_YEAR, 0);
+    const strikeExposureVariants: StrikeExposureVariants[] = [];
 
-    // Process all call options first
-    for (const callOption of options) {
-      // Check if this option is at the expiration we are looking at
-      if (callOption.expirationTimestamp !== expiration || callOption.optionType === 'put') {
+    for (const callOption of chainOptions) {
+      if (callOption.expirationTimestamp !== expiration || callOption.optionType !== 'call') {
         continue;
       }
 
-      // Get the corresponding put option
-      const putOption = options.find(
-        (opt) =>
-          opt.expirationTimestamp === expiration &&
-          opt.optionType === 'put' &&
-          opt.strike === callOption.strike
-      );
-
+      const putOption = putOptionsByKey.get(getOptionKey(expiration, callOption.strike));
       if (!putOption) {
-        continue; // Skip if no matching put
+        continue;
       }
 
-      // Get IV for this strike and expiry from the surface
-      const callIVAtStrike = getIVForStrike(ivSurfaces, expiration, 'call', callOption.strike);
-      const putIVAtStrike = getIVForStrike(ivSurfaces, expiration, 'put', putOption.strike);
+      const callIVAtStrike = resolveIVPercent(
+        getIVForStrike(ivSurfaces, expiration, 'call', callOption.strike),
+        callOption.impliedVolatility
+      );
+      const putIVAtStrike = resolveIVPercent(
+        getIVForStrike(ivSurfaces, expiration, 'put', putOption.strike),
+        putOption.impliedVolatility
+      );
 
-      // Get time to expiration in years
-      const timeToExpirationInYears = getTimeToExpirationInYears(expiration);
-
-      // Calculate Greeks for both call and put
-      // Rates are already decimals in OptionChain, IV from surface is percentage
       const callGreeks = calculateGreeks({
         spot,
         strike: callOption.strike,
         timeToExpiry: timeToExpirationInYears,
-        volatility: callIVAtStrike / 100.0, // Convert from percentage to decimal
+        volatility: callIVAtStrike / 100.0,
         riskFreeRate,
         dividendYield,
         optionType: 'call',
@@ -105,90 +106,72 @@ export function calculateGammaVannaCharmExposures(
         optionType: 'put',
       });
 
-      // Calculate exposures from dealer perspective
-      // Dealer is short calls (negative gamma) and long puts (positive gamma)
-      // Multiply by 100 for contract size, multiply by spot for dollar exposure
-      // Multiply by 0.01 for 1% move sensitivity
-      
-      // Gamma: second order with respect to price twice
-      const gammaExposureForStrike =
-        -callOption.openInterest * callGreeks.gamma * (spot * 100.0) * spot * 0.01 +
-        putOption.openInterest * putGreeks.gamma * (spot * 100.0) * spot * 0.01;
+      const callOpenInterest = sanitizeFinite(callOption.openInterest);
+      const putOpenInterest = sanitizeFinite(putOption.openInterest);
 
-      // Vanna: second order with respect to price and volatility
-      const vannaExposureForStrike =
-        -callOption.openInterest * callGreeks.vanna * (spot * 100.0) * callIVAtStrike * 0.01 +
-        putOption.openInterest * putGreeks.vanna * (spot * 100.0) * putIVAtStrike * 0.01;
+      const canonical = calculateCanonicalVector(
+        spot,
+        callOpenInterest,
+        putOpenInterest,
+        callGreeks.gamma,
+        putGreeks.gamma,
+        callGreeks.vanna,
+        putGreeks.vanna,
+        callGreeks.charm,
+        putGreeks.charm
+      );
 
-      // Charm: second order with respect to price and time
-      // Already normalized per day in calculateGreeks
-      const charmExposureForStrike =
-        -callOption.openInterest * callGreeks.charm * (spot * 100.0) * DAYS_PER_YEAR * timeToExpirationInYears +
-        putOption.openInterest * putGreeks.charm * (spot * 100.0) * DAYS_PER_YEAR * timeToExpirationInYears;
+      const stateWeighted = calculateStateWeightedVector(
+        spot,
+        callOpenInterest,
+        putOpenInterest,
+        callGreeks.vanna,
+        putGreeks.vanna,
+        callGreeks.charm,
+        putGreeks.charm,
+        callIVAtStrike,
+        putIVAtStrike,
+        timeToExpirationInDays,
+        canonical.gammaExposure
+      );
 
-      // NaN checks
-      const gammaExposure = isNaN(gammaExposureForStrike) ? 0.0 : gammaExposureForStrike;
-      const vannaExposure = isNaN(vannaExposureForStrike) ? 0.0 : vannaExposureForStrike;
-      const charmExposure = isNaN(charmExposureForStrike) ? 0.0 : charmExposureForStrike;
+      const callFlowDelta = resolveFlowDeltaOpenInterest(callOption.openInterest, callOption.liveOpenInterest);
+      const putFlowDelta = resolveFlowDeltaOpenInterest(putOption.openInterest, putOption.liveOpenInterest);
+      const flowDelta = calculateCanonicalVector(
+        spot,
+        callFlowDelta,
+        putFlowDelta,
+        callGreeks.gamma,
+        putGreeks.gamma,
+        callGreeks.vanna,
+        putGreeks.vanna,
+        callGreeks.charm,
+        putGreeks.charm
+      );
 
-      // Add to totals
-      totalGammaExposure += gammaExposure;
-      totalVannaExposure += vannaExposure;
-      totalCharmExposure += charmExposure;
-
-      // Add to strike exposures
-      strikeExposures.push({
+      strikeExposureVariants.push({
         strikePrice: callOption.strike,
-        gammaExposure,
-        vannaExposure,
-        charmExposure,
-        netExposure: gammaExposure + vannaExposure + charmExposure,
+        canonical,
+        stateWeighted,
+        flowDelta,
       });
     }
 
-    if (strikeExposures.length === 0) {
-      continue; // No options for this expiration
+    if (strikeExposureVariants.length === 0) {
+      continue;
     }
 
-    // Sort by gamma exposure and find extremes
-    strikeExposures.sort((a, b) => b.gammaExposure - a.gammaExposure);
-    strikeOfMaxGamma = strikeExposures[0].strikePrice;
-    strikeOfMinGamma = strikeExposures[strikeExposures.length - 1].strikePrice;
+    const canonical = buildModeBreakdown(strikeExposureVariants, 'canonical');
+    const stateWeighted = buildModeBreakdown(strikeExposureVariants, 'stateWeighted');
+    const flowDelta = buildModeBreakdown(strikeExposureVariants, 'flowDelta');
 
-    // Sort by vanna exposure and find extremes
-    strikeExposures.sort((a, b) => b.vannaExposure - a.vannaExposure);
-    strikeOfMaxVanna = strikeExposures[0].strikePrice;
-    strikeOfMinVanna = strikeExposures[strikeExposures.length - 1].strikePrice;
-
-    // Sort by charm exposure and find extremes
-    strikeExposures.sort((a, b) => b.charmExposure - a.charmExposure);
-    strikeOfMaxCharm = strikeExposures[0].strikePrice;
-    strikeOfMinCharm = strikeExposures[strikeExposures.length - 1].strikePrice;
-
-    // Sort by net exposure and find extremes
-    strikeExposures.sort((a, b) => b.netExposure - a.netExposure);
-    strikeOfMaxNet = strikeExposures[0].strikePrice;
-    strikeOfMinNet = strikeExposures[strikeExposures.length - 1].strikePrice;
-
-    const totalNetExposure = totalGammaExposure + totalVannaExposure + totalCharmExposure;
-
-    // Add exposure row
     exposureRows.push({
       spotPrice: spot,
       expiration,
-      totalGammaExposure,
-      totalVannaExposure,
-      totalCharmExposure,
-      totalNetExposure,
-      strikeOfMaxGamma,
-      strikeOfMinGamma,
-      strikeOfMaxVanna,
-      strikeOfMinVanna,
-      strikeOfMaxCharm,
-      strikeOfMinCharm,
-      strikeOfMaxNet,
-      strikeOfMinNet,
-      strikeExposures
+      canonical,
+      stateWeighted,
+      flowDelta,
+      strikeExposureVariants,
     });
   }
 
@@ -197,12 +180,12 @@ export function calculateGammaVannaCharmExposures(
 
 /**
  * Calculate shares needed to cover net exposure
- * 
+ *
  * @param sharesOutstanding - Total shares outstanding
  * @param totalNetExposure - Total net exposure (gamma + vanna + charm)
  * @param underlyingMark - Current spot price
  * @returns Action to cover, shares to cover, implied move %, and resulting price
- * 
+ *
  * @example
  * ```typescript
  * const coverage = calculateSharesNeededToCover(1000000000, -5000000, 450.50);
@@ -266,4 +249,162 @@ export function calculateSharesNeededToCover(
     impliedMoveToCover: impliedChange,
     resultingSpotToCover: resultingPrice,
   };
+}
+
+function getOptionKey(expiration: number, strike: number): string {
+  return `${expiration}:${strike}`;
+}
+
+function calculateCanonicalVector(
+  spot: number,
+  callPosition: number,
+  putPosition: number,
+  callGamma: number,
+  putGamma: number,
+  callVanna: number,
+  putVanna: number,
+  callCharm: number,
+  putCharm: number
+): ExposureVector {
+  const gammaExposure =
+    -callPosition * callGamma * (spot * 100.0) * spot * 0.01 +
+    putPosition * putGamma * (spot * 100.0) * spot * 0.01;
+
+  const vannaExposure =
+    -callPosition * callVanna * (spot * 100.0) * 0.01 +
+    putPosition * putVanna * (spot * 100.0) * 0.01;
+
+  const charmExposure =
+    -callPosition * callCharm * (spot * 100.0) +
+    putPosition * putCharm * (spot * 100.0);
+
+  return sanitizeVector({
+    gammaExposure,
+    vannaExposure,
+    charmExposure,
+    netExposure: gammaExposure + vannaExposure + charmExposure,
+  });
+}
+
+function calculateStateWeightedVector(
+  spot: number,
+  callPosition: number,
+  putPosition: number,
+  callVanna: number,
+  putVanna: number,
+  callCharm: number,
+  putCharm: number,
+  callIVPercent: number,
+  putIVPercent: number,
+  timeToExpirationInDays: number,
+  canonicalGammaExposure: number
+): ExposureVector {
+  const callIVLevel = Math.max(callIVPercent * 0.01, 0);
+  const putIVLevel = Math.max(putIVPercent * 0.01, 0);
+
+  // Gamma already uses instantaneous price scaling in canonical GEX.
+  const gammaExposure = canonicalGammaExposure;
+
+  const vannaExposure =
+    -callPosition * callVanna * (spot * 100.0) * 0.01 * callIVLevel +
+    putPosition * putVanna * (spot * 100.0) * 0.01 * putIVLevel;
+
+  const canonicalCharmComponent =
+    -callPosition * callCharm * (spot * 100.0) +
+    putPosition * putCharm * (spot * 100.0);
+  const charmExposure = canonicalCharmComponent * Math.max(timeToExpirationInDays, 0);
+
+  return sanitizeVector({
+    gammaExposure,
+    vannaExposure,
+    charmExposure,
+    netExposure: gammaExposure + vannaExposure + charmExposure,
+  });
+}
+
+function resolveFlowDeltaOpenInterest(openInterest: number, liveOpenInterest?: number): number {
+  if (typeof liveOpenInterest !== 'number' || !isFinite(liveOpenInterest)) {
+    return 0;
+  }
+  return sanitizeFinite(liveOpenInterest - openInterest);
+}
+
+function resolveIVPercent(ivFromSurface: number, optionImpliedVolatilityDecimal: number): number {
+  if (isFinite(ivFromSurface) && ivFromSurface > 0) {
+    return ivFromSurface;
+  }
+
+  const fallback = optionImpliedVolatilityDecimal * 100.0;
+  if (isFinite(fallback) && fallback > 0) {
+    return fallback;
+  }
+
+  return 0;
+}
+
+function buildModeBreakdown(
+  strikeExposureVariants: StrikeExposureVariants[],
+  mode: ExposureMode
+): ExposureModeBreakdown {
+  const strikeExposures: StrikeExposure[] = strikeExposureVariants.map((strike) => ({
+    strikePrice: strike.strikePrice,
+    ...strike[mode],
+  }));
+
+  if (strikeExposures.length === 0) {
+    return {
+      totalGammaExposure: 0,
+      totalVannaExposure: 0,
+      totalCharmExposure: 0,
+      totalNetExposure: 0,
+      strikeOfMaxGamma: 0,
+      strikeOfMinGamma: 0,
+      strikeOfMaxVanna: 0,
+      strikeOfMinVanna: 0,
+      strikeOfMaxCharm: 0,
+      strikeOfMinCharm: 0,
+      strikeOfMaxNet: 0,
+      strikeOfMinNet: 0,
+      strikeExposures: [],
+    };
+  }
+
+  const totalGammaExposure = strikeExposures.reduce((sum, s) => sum + s.gammaExposure, 0);
+  const totalVannaExposure = strikeExposures.reduce((sum, s) => sum + s.vannaExposure, 0);
+  const totalCharmExposure = strikeExposures.reduce((sum, s) => sum + s.charmExposure, 0);
+  const totalNetExposure = totalGammaExposure + totalVannaExposure + totalCharmExposure;
+
+  const byGamma = [...strikeExposures].sort((a, b) => b.gammaExposure - a.gammaExposure);
+  const byVanna = [...strikeExposures].sort((a, b) => b.vannaExposure - a.vannaExposure);
+  const byCharm = [...strikeExposures].sort((a, b) => b.charmExposure - a.charmExposure);
+  const byNet = [...strikeExposures].sort((a, b) => b.netExposure - a.netExposure);
+
+  return {
+    totalGammaExposure: sanitizeFinite(totalGammaExposure),
+    totalVannaExposure: sanitizeFinite(totalVannaExposure),
+    totalCharmExposure: sanitizeFinite(totalCharmExposure),
+    totalNetExposure: sanitizeFinite(totalNetExposure),
+    strikeOfMaxGamma: byGamma[0].strikePrice,
+    strikeOfMinGamma: byGamma[byGamma.length - 1].strikePrice,
+    strikeOfMaxVanna: byVanna[0].strikePrice,
+    strikeOfMinVanna: byVanna[byVanna.length - 1].strikePrice,
+    strikeOfMaxCharm: byCharm[0].strikePrice,
+    strikeOfMinCharm: byCharm[byCharm.length - 1].strikePrice,
+    strikeOfMaxNet: byNet[0].strikePrice,
+    strikeOfMinNet: byNet[byNet.length - 1].strikePrice,
+    strikeExposures: byNet,
+  };
+}
+
+function sanitizeVector(vector: ExposureVector): ExposureVector {
+  return {
+    gammaExposure: sanitizeFinite(vector.gammaExposure),
+    vannaExposure: sanitizeFinite(vector.vannaExposure),
+    charmExposure: sanitizeFinite(vector.charmExposure),
+    netExposure: sanitizeFinite(vector.netExposure),
+  };
+}
+
+function sanitizeFinite(value: number): number {
+  return isFinite(value) && !isNaN(value) ? value : 0;
 }

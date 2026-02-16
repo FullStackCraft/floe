@@ -146,7 +146,8 @@ const ivSurfaces = getIVSurfaces("blackscholes", "totalvariance", chain);
 console.log("IV Surfaces built for", ivSurfaces.length, "option types");
 
 // Calculate exposures
-const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposureVariants = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
 
 for (const exp of exposures) {
   console.log("\\nExpiration:", new Date(exp.expiration).toDateString());
@@ -507,7 +508,8 @@ const chain: OptionChain = {
 
 // Build IV surfaces and exposures
 const ivSurfaces = getIVSurfaces("blackscholes", "totalvariance", chain);
-const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposureVariants = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
 
 if (exposures.length === 0) {
   console.log("No exposures computed (options may be expired)");

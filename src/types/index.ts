@@ -184,6 +184,56 @@ export interface StrikeExposure {
 }
 
 /**
+ * Input options for exposure calculations.
+ */
+export interface ExposureCalculationOptions {
+  /**
+   * Reference timestamp in milliseconds.
+   * If omitted, Date.now() is used.
+   */
+  asOfTimestamp?: number;
+}
+
+/**
+ * Exposure vector used by variant outputs.
+ */
+export interface ExposureVector {
+  gammaExposure: number;
+  vannaExposure: number;
+  charmExposure: number;
+  netExposure: number;
+}
+
+/**
+ * Per-strike exposure variants (canonical, state-weighted, and flow delta).
+ */
+export interface StrikeExposureVariants {
+  strikePrice: number;
+  canonical: ExposureVector;
+  stateWeighted: ExposureVector;
+  flowDelta: ExposureVector;
+}
+
+/**
+ * Full exposure breakdown for one mode.
+ */
+export interface ExposureModeBreakdown {
+  totalGammaExposure: number;
+  totalVannaExposure: number;
+  totalCharmExposure: number;
+  totalNetExposure: number;
+  strikeOfMaxGamma: number;
+  strikeOfMinGamma: number;
+  strikeOfMaxVanna: number;
+  strikeOfMinVanna: number;
+  strikeOfMaxCharm: number;
+  strikeOfMinCharm: number;
+  strikeOfMaxNet: number;
+  strikeOfMinNet: number;
+  strikeExposures: StrikeExposure[];
+}
+
+/**
  * Exposure metrics per expiration
  */
 export interface ExposurePerExpiry {
@@ -217,6 +267,27 @@ export interface ExposurePerExpiry {
   strikeOfMinNet: number;
   /** Per-strike exposures */
   strikeExposures: StrikeExposure[];
+}
+
+/**
+ * Exposure variants per expiration.
+ * canonical: classic per-1% / per-vol-point / per-day definitions
+ * stateWeighted: level-weighted vanna/charm (gamma remains canonical)
+ * flowDelta: exposure deltas from intraday OI changes (liveOpenInterest - openInterest)
+ */
+export interface ExposureVariantsPerExpiry {
+  /** Current spot price */
+  spotPrice: number;
+  /** Expiration timestamp in milliseconds */
+  expiration: number;
+  /** Canonical exposure mode */
+  canonical: ExposureModeBreakdown;
+  /** State-weighted exposure mode */
+  stateWeighted: ExposureModeBreakdown;
+  /** Flow-delta exposure mode */
+  flowDelta: ExposureModeBreakdown;
+  /** Per-strike variants */
+  strikeExposureVariants: StrikeExposureVariants[];
 }
 
 /**

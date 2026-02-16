@@ -63,7 +63,8 @@ const chain: OptionChain = {
 const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
 
 // Then calculate exposures
-const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposureVariants = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
 
 // Analyze results by expiration
 for (const expiry of exposures) {
@@ -224,7 +225,8 @@ async function trackLiveExposures() {
   
   // Calculate exposures
   const surfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
-  const exposures = calculateGammaVannaCharmExposures(chain, surfaces);
+  const exposureVariants = calculateGammaVannaCharmExposures(chain, surfaces);
+  const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
   
   // Output analysis
   console.log('Live Exposure Analysis:');

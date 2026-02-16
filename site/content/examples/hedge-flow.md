@@ -40,7 +40,8 @@ const chain: OptionChain = {
 
 // Build IV surfaces and exposures
 const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
-const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposureVariants = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
 
 // Get the call surface for the nearest expiration
 const nearestExpiry = exposures[0];
@@ -158,7 +159,8 @@ await client.fetchOpenInterest();
 // On each update cycle, recompute
 function recompute(chain: OptionChain) {
   const surfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
-  const exposures = calculateGammaVannaCharmExposures(chain, surfaces);
+  const exposureVariants = calculateGammaVannaCharmExposures(chain, surfaces);
+  const exposures = exposureVariants.map(e => ({ spotPrice: e.spotPrice, expiration: e.expiration, ...e.canonical }));
   const callSurface = surfaces.find(s => s.putCall === 'call');
   
   const analysis = analyzeHedgeFlow(exposures[0], callSurface);

@@ -27,7 +27,13 @@ async function analyzeHedgingDynamics() {
   
   // Step 2: Calculate raw exposures
   const allExposures = calculateGammaVannaCharmExposures(chain, surfaces);
-  const exposures = allExposures[0];
+  const firstExpiry = allExposures[0];
+  const exposures = firstExpiry
+    ? { spotPrice: firstExpiry.spotPrice, expiration: firstExpiry.expiration, ...firstExpiry.canonical }
+    : undefined;
+  if (!exposures) {
+    throw new Error("No exposure rows found");
+  }
   
   // Step 3: Derive regime from the IV surface
   const regime = deriveRegimeParams(callSurface, chain.spot);
