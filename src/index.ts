@@ -61,12 +61,56 @@ export {
   getProbabilityInRange,
   getCumulativeProbability,
   getQuantile,
+  // Exposure-adjusted PDF
+  estimateExposureAdjustedPDF,
+  getEdgeAtPrice,
+  getSignificantAdjustmentLevels,
+  DEFAULT_ADJUSTMENT_CONFIG,
+  LOW_VOL_CONFIG,
+  CRISIS_CONFIG,
+  OPEX_CONFIG,
 } from './impliedpdf';
 export type {
   StrikeProbability,
   ImpliedProbabilityDistribution,
   ImpliedPDFResult,
+  // Exposure-adjusted PDF types
+  ExposureAdjustmentConfig,
+  AdjustedPDFResult,
+  PDFComparison,
 } from './impliedpdf';
+
+// Hedge flow analysis (impulse curve, charm integral, regime derivation)
+export {
+  // Regime derivation from IV surface
+  deriveRegimeParams,
+  interpolateIVAtStrike,
+  // Hedge impulse curve
+  computeHedgeImpulseCurve,
+  // Charm integral
+  computeCharmIntegral,
+  // Combined analysis
+  analyzeHedgeFlow,
+} from './hedgeflow';
+export type {
+  // Regime types
+  MarketRegime,
+  RegimeParams,
+  // Hedge impulse types
+  HedgeImpulseConfig,
+  HedgeImpulsePoint,
+  HedgeImpulseCurve,
+  ZeroCrossing,
+  ImpulseExtremum,
+  DirectionalAsymmetry,
+  ImpulseRegime,
+  // Charm integral types
+  CharmIntegralConfig,
+  CharmBucket,
+  CharmIntegral,
+  // Combined analysis
+  HedgeFlowAnalysis,
+} from './hedgeflow';
 
 // Client
 export { FloeClient, Broker } from './client/FloeClient';
@@ -86,3 +130,21 @@ export {
   createOptionChain,
 } from './adapters';
 
+// Model-free implied volatility (variance swap / VIX methodology)
+export {
+  computeVarianceSwapIV,
+  computeImpliedVolatility,
+} from './iv';
+export type {
+  VarianceSwapResult,
+  ImpliedVolatilityResult,
+} from './iv';
+
+// Realized volatility (tick-based quadratic variation)
+export {
+  computeRealizedVolatility,
+} from './rv';
+export type {
+  PriceObservation,
+  RealizedVolatilityResult,
+} from './rv';

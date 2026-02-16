@@ -292,6 +292,313 @@ const p10 = getQuantile(distribution, 0.10);  // 10th percentile
 const p90 = getQuantile(distribution, 0.90);  // 90th percentile
 ```
 
+## Exposure-Adjusted Implied PDF
+
+### estimateExposureAdjustedPDF
+
+Modify the Breeden-Litzenberger implied PDF to account for dealer gamma, vanna, and charm positioning effects:
+
+```typescript
+import {
+  estimateExposureAdjustedPDF,
+  calculateGammaVannaCharmExposures,
+  getIVSurfaces,
+} from "@fullstackcraftllc/floe";
+
+const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
+const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+
+// Use call options for the same expiration as the exposures
+const callOptions = chain.options.filter(
+  o => o.optionType === 'call' && o.expirationTimestamp === exposures[0].expiration
+);
+
+const result = estimateExposureAdjustedPDF(
+  'SPY',
+  chain.spot,
+  callOptions,
+  exposures[0],      // ExposurePerExpiry for the target expiration
+  {}                  // Optional: partial ExposureAdjustmentConfig overrides
+);
+
+if (result.success) {
+  console.log(`Baseline mode: $${result.baseline.mostLikelyPrice}`);
+  console.log(`Adjusted mode: $${result.adjusted.mostLikelyPrice}`);
+  console.log(`Mean shift: ${result.comparison.meanShift.toFixed(2)}`);
+  console.log(`Skew change: ${result.comparison.skewChange.toFixed(4)}`);
+  console.log(`Kurtosis change: ${result.comparison.kurtosisChange.toFixed(4)}`);
+}
+```
+
+### Preset Configurations
+
+Four regime-specific configurations are exported:
+
+```typescript
+import {
+  DEFAULT_ADJUSTMENT_CONFIG,  // Balanced for normal markets
+  LOW_VOL_CONFIG,             // Strong gamma pinning, moderate vanna
+  CRISIS_CONFIG,              // Amplified vanna cascade, weak pinning
+  OPEX_CONFIG,                // Strong pinning + accelerated charm
+} from "@fullstackcraftllc/floe";
+
+// Use a preset
+const result = estimateExposureAdjustedPDF('SPY', spot, calls, exposures[0], CRISIS_CONFIG);
+```
+
+### getEdgeAtPrice
+
+Compare cumulative probabilities between baseline and adjusted distributions at a given price:
+
+```typescript
+import { getEdgeAtPrice } from "@fullstackcraftllc/floe";
+
+// Positive edge = adjusted PDF assigns more probability below this price
+const edge = getEdgeAtPrice(result, 445.0);
+console.log(`Edge at $445: ${(edge * 100).toFixed(2)}%`);
+```
+
+### getSignificantAdjustmentLevels
+
+Find strikes where the exposure adjustment has the largest effect:
+
+```typescript
+import { getSignificantAdjustmentLevels } from "@fullstackcraftllc/floe";
+
+const levels = getSignificantAdjustmentLevels(result, 0.01); // 1% threshold
+
+for (const level of levels) {
+  console.log(`$${level.strike}: baseline ${(level.baselineProb * 100).toFixed(1)}% → adjusted ${(level.adjustedProb * 100).toFixed(1)}% (edge: ${(level.edge * 100).toFixed(2)}%)`);
+}
+```
+
+## Hedge Flow Analysis
+
+Combines dealer gamma and vanna exposures into an actionable price-space response curve, paired with a charm integral that captures time-decay pressure independently.
+
+### deriveRegimeParams
+
+Extract market regime parameters from the IV surface:
+
+```typescript
+import { deriveRegimeParams, getIVSurfaces } from "@fullstackcraftllc/floe";
+
+const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
+
+// Use a call surface for regime derivation
+const callSurface = ivSurfaces.find(s => s.putCall === 'call');
+const regime = deriveRegimeParams(callSurface, chain.spot);
+
+console.log(`Regime: ${regime.regime}`);         // 'calm' | 'normal' | 'stressed' | 'crisis'
+console.log(`ATM IV: ${(regime.atmIV * 100).toFixed(1)}%`);
+console.log(`Spot-Vol Correlation: ${regime.impliedSpotVolCorr.toFixed(3)}`);
+console.log(`Vol of Vol: ${regime.impliedVolOfVol.toFixed(4)}`);
+console.log(`Expected Daily Vol Move: ${(regime.expectedDailyVolMove * 100).toFixed(2)} pts`);
+```
+
+### computeHedgeImpulseCurve
+
+Compute the hedge impulse curve H(S) = GEX(S) - (k/S) × VEX(S) across a price grid:
+
+```typescript
+import {
+  computeHedgeImpulseCurve,
+  calculateGammaVannaCharmExposures,
+  getIVSurfaces,
+} from "@fullstackcraftllc/floe";
+
+const ivSurfaces = getIVSurfaces('blackscholes', 'totalvariance', chain);
+const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+const callSurface = ivSurfaces.find(s => s.putCall === 'call');
+
+const curve = computeHedgeImpulseCurve(
+  exposures[0],    // ExposurePerExpiry for target expiration
+  callSurface,     // IVSurface for regime/k derivation
+  {                // Optional HedgeImpulseConfig
+    rangePercent: 3,         // ±3% price grid (default)
+    stepPercent: 0.05,       // 0.05% grid step (default)
+    kernelWidthStrikes: 2,   // kernel = 2 × strike spacing (default)
+  }
+);
+
+// Instantaneous reading at current spot
+console.log(`Impulse at spot: ${curve.impulseAtSpot.toFixed(0)}`);
+console.log(`Slope at spot: ${curve.slopeAtSpot.toFixed(0)}`);
+console.log(`Regime: ${curve.regime}`);
+console.log(`Spot-vol coupling k: ${curve.spotVolCoupling.toFixed(2)}`);
+console.log(`Strike spacing: ${curve.strikeSpacing}`);
+console.log(`Kernel width: ${curve.kernelWidth.toFixed(1)} points`);
+
+// Key levels
+console.log(`
+Zero crossings (flip levels):`);
+for (const zc of curve.zeroCrossings) {
+  console.log(`  $${zc.price.toFixed(1)} (${zc.direction})`);
+}
+
+console.log(`
+Attractors (positive impulse basins):`);
+for (const ext of curve.extrema.filter(e => e.type === 'basin')) {
+  console.log(`  $${ext.price.toFixed(1)} (impulse: ${ext.impulse.toFixed(0)})`);
+}
+
+console.log(`
+Accelerators (negative impulse peaks):`);
+for (const ext of curve.extrema.filter(e => e.type === 'peak')) {
+  console.log(`  $${ext.price.toFixed(1)} (impulse: ${ext.impulse.toFixed(0)})`);
+}
+
+// Directional asymmetry
+const a = curve.asymmetry;
+console.log(`
+Directional bias: ${a.bias}`);
+console.log(`Asymmetry ratio: ${a.asymmetryRatio.toFixed(2)}`);
+
+// Nearest attractors
+if (curve.nearestAttractorAbove) {
+  console.log(`Nearest attractor above: $${curve.nearestAttractorAbove.toFixed(1)}`);
+}
+if (curve.nearestAttractorBelow) {
+  console.log(`Nearest attractor below: $${curve.nearestAttractorBelow.toFixed(1)}`);
+}
+```
+
+### computeCharmIntegral
+
+Compute the cumulative charm exposure from now until expiration:
+
+```typescript
+import { computeCharmIntegral } from "@fullstackcraftllc/floe";
+
+const charm = computeCharmIntegral(
+  exposures[0],    // ExposurePerExpiry
+  { timeStepMinutes: 15 }  // Optional CharmIntegralConfig
+);
+
+console.log(`Minutes remaining: ${charm.minutesRemaining.toFixed(0)}`);
+console.log(`Total charm to close: ${charm.totalCharmToClose.toLocaleString()}`);
+console.log(`Direction: ${charm.direction}`);  // 'buying' | 'selling' | 'neutral'
+
+// Time-bucketed curve for visualization
+console.log(`\nCharm curve (${charm.buckets.length} buckets):`);
+for (const bucket of charm.buckets.slice(0, 5)) {
+  console.log(`  ${bucket.minutesRemaining.toFixed(0)} min remaining: cumulative ${bucket.cumulativeCEX.toLocaleString()}`);
+}
+
+// Per-strike breakdown (top contributors)
+console.log(`\nTop charm contributors:`);
+for (const sc of charm.strikeContributions.slice(0, 5)) {
+  console.log(`  $${sc.strike}: ${sc.charmExposure.toLocaleString()} (${(sc.fractionOfTotal * 100).toFixed(1)}%)`);
+}
+```
+
+### analyzeHedgeFlow
+
+Convenience function that computes both the impulse curve and charm integral in a single call:
+
+```typescript
+import { analyzeHedgeFlow } from "@fullstackcraftllc/floe";
+
+const analysis = analyzeHedgeFlow(
+  exposures[0],    // ExposurePerExpiry
+  callSurface,     // IVSurface
+  { rangePercent: 3, kernelWidthStrikes: 2 },  // Optional impulse config
+  { timeStepMinutes: 15 }                       // Optional charm config
+);
+
+// Access both panels
+const { impulseCurve, charmIntegral, regimeParams } = analysis;
+
+console.log(`Regime: ${regimeParams.regime}`);
+console.log(`Impulse regime: ${impulseCurve.regime}`);
+console.log(`Impulse at spot: ${impulseCurve.impulseAtSpot.toFixed(0)}`);
+console.log(`Charm to close: ${charmIntegral.totalCharmToClose.toLocaleString()}`);
+console.log(`Charm direction: ${charmIntegral.direction}`);
+```
+
+## Model-Free Implied Volatility
+
+Computes implied volatility from the full option chain using the CBOE variance swap methodology. Model-free (no Black-Scholes inversion required) and applicable to any optionable underlying.
+
+### computeVarianceSwapIV
+
+Compute model-free implied variance for a single expiration:
+
+```typescript
+import { computeVarianceSwapIV } from "@fullstackcraftllc/floe";
+
+// Pass all options for one expiration (both calls and puts)
+const todayOptions = chain.options.filter(
+  o => o.expirationTimestamp === todayExpiration
+);
+
+const result = computeVarianceSwapIV(todayOptions, chain.spot, 0.05);
+
+console.log(`Implied Vol: ${(result.impliedVolatility * 100).toFixed(1)}%`);
+console.log(`Forward: $${result.forward.toFixed(2)}`);
+console.log(`K₀ (ATM strike): $${result.k0}`);
+console.log(`Time to expiry: ${(result.timeToExpiry * 365).toFixed(2)} days`);
+console.log(`Strikes contributing: ${result.numStrikes}`);
+console.log(`Put contribution: ${result.putContribution.toFixed(6)}`);
+console.log(`Call contribution: ${result.callContribution.toFixed(6)}`);
+```
+
+### computeImpliedVolatility
+
+Single-term or two-term interpolated implied volatility. Supports the standard CBOE VIX interpolation when two expirations are provided:
+
+```typescript
+import { computeImpliedVolatility } from "@fullstackcraftllc/floe";
+
+// Single-term: IV from one expiration
+const singleTerm = computeImpliedVolatility(todayOptions, chain.spot, 0.05);
+console.log(`0DTE IV: ${(singleTerm.impliedVolatility * 100).toFixed(1)}%`);
+
+// Two-term interpolation: bracket a target maturity
+const tomorrowOptions = chain.options.filter(
+  o => o.expirationTimestamp === tomorrowExpiration
+);
+
+const interpolated = computeImpliedVolatility(
+  todayOptions,          // near-term options
+  chain.spot,
+  0.05,
+  tomorrowOptions,       // far-term options
+  1                      // target: 1-day constant maturity
+);
+
+console.log(`Interpolated IV: ${(interpolated.impliedVolatility * 100).toFixed(1)}%`);
+console.log(`Is interpolated: ${interpolated.isInterpolated}`);
+console.log(`Near-term IV: ${(interpolated.nearTerm.impliedVolatility * 100).toFixed(1)}%`);
+console.log(`Far-term IV: ${(interpolated.farTerm?.impliedVolatility ?? 0 * 100).toFixed(1)}%`);
+```
+
+## Realized Volatility
+
+Computes annualized realized volatility from price observations using quadratic variation. Tick-based, stateless, no windowing — pass all observations and it computes from the full series.
+
+### computeRealizedVolatility
+
+```typescript
+import { computeRealizedVolatility, PriceObservation } from "@fullstackcraftllc/floe";
+
+// Accumulate price observations from streaming data
+const observations: PriceObservation[] = [
+  { price: 600.10, timestamp: 1708099800000 },
+  { price: 600.25, timestamp: 1708099860000 },
+  { price: 599.80, timestamp: 1708099920000 },
+  // ... every tick from the session
+];
+
+const rv = computeRealizedVolatility(observations);
+
+console.log(`Realized Vol: ${(rv.realizedVolatility * 100).toFixed(1)}%`);
+console.log(`Observations: ${rv.numObservations}`);
+console.log(`Returns computed: ${rv.numReturns}`);
+console.log(`Elapsed: ${rv.elapsedMinutes.toFixed(0)} minutes`);
+console.log(`Quadratic variation: ${rv.quadraticVariation.toFixed(8)}`);
+```
+
 ## OCC Symbol Utilities
 
 ### buildOCCSymbol
@@ -421,6 +728,7 @@ import {
 | TastyTrade | `Broker.TASTYTRADE` | Session Token |
 | TradeStation | `Broker.TRADESTATION` | OAuth Token |
 | Charles Schwab | `Broker.SCHWAB` | OAuth Token |
+| Interactive Brokers | `Broker.IBKR` | OAuth Token |
 
 ### Basic Usage
 
@@ -578,5 +886,146 @@ interface ImpliedProbabilityDistribution {
   tailSkew: number;
   cumulativeProbabilityAboveSpot: number;
   cumulativeProbabilityBelowSpot: number;
+}
+```
+
+### RegimeParams
+
+```typescript
+type MarketRegime = 'calm' | 'normal' | 'stressed' | 'crisis';
+
+interface RegimeParams {
+  regime: MarketRegime;
+  atmIV: number;                 // decimal (e.g. 0.18 for 18%)
+  impliedSpotVolCorr: number;    // typically [-0.9, -0.5] for indices
+  impliedVolOfVol: number;
+  expectedDailyMove: number;
+  expectedDailyVolMove: number;
+}
+```
+
+### HedgeImpulseCurve
+
+```typescript
+interface HedgeImpulseCurve {
+  spot: number;
+  expiration: number;
+  computedAt: number;
+  spotVolCoupling: number;       // k coefficient derived from IV skew
+  kernelWidth: number;           // in price units
+  strikeSpacing: number;         // detected modal strike spacing
+  curve: HedgeImpulsePoint[];    // full price grid
+  impulseAtSpot: number;         // H(S) at current spot
+  slopeAtSpot: number;           // dH/dS at current spot
+  zeroCrossings: ZeroCrossing[];
+  extrema: ImpulseExtremum[];
+  asymmetry: DirectionalAsymmetry;
+  regime: ImpulseRegime;         // 'pinned' | 'expansion' | 'squeeze-up' | 'squeeze-down' | 'neutral'
+  nearestAttractorAbove: number | null;
+  nearestAttractorBelow: number | null;
+}
+
+interface HedgeImpulsePoint {
+  price: number;
+  gamma: number;    // kernel-smoothed GEX at this price
+  vanna: number;    // kernel-smoothed VEX at this price
+  impulse: number;  // gamma - (k/S) * vanna
+}
+
+interface ZeroCrossing {
+  price: number;
+  direction: 'rising' | 'falling';
+}
+
+interface ImpulseExtremum {
+  price: number;
+  impulse: number;
+  type: 'basin' | 'peak';  // basin = attractor, peak = accelerator
+}
+
+interface DirectionalAsymmetry {
+  upside: number;
+  downside: number;
+  integrationRangePercent: number;
+  bias: 'up' | 'down' | 'neutral';
+  asymmetryRatio: number;
+}
+```
+
+### CharmIntegral
+
+```typescript
+interface CharmIntegral {
+  spot: number;
+  expiration: number;
+  computedAt: number;
+  minutesRemaining: number;
+  totalCharmToClose: number;
+  direction: 'buying' | 'selling' | 'neutral';
+  buckets: CharmBucket[];
+  strikeContributions: Array<{
+    strike: number;
+    charmExposure: number;
+    fractionOfTotal: number;
+  }>;
+}
+
+interface CharmBucket {
+  minutesRemaining: number;
+  instantaneousCEX: number;
+  cumulativeCEX: number;
+}
+```
+
+### VarianceSwapResult
+
+```typescript
+interface VarianceSwapResult {
+  impliedVolatility: number;   // annualized, decimal
+  annualizedVariance: number;
+  forward: number;             // forward price F
+  k0: number;                  // ATM strike
+  timeToExpiry: number;
+  expiration: number;
+  numStrikes: number;
+  putContribution: number;
+  callContribution: number;
+}
+```
+
+### ImpliedVolatilityResult
+
+```typescript
+interface ImpliedVolatilityResult {
+  impliedVolatility: number;
+  nearTerm: VarianceSwapResult;
+  farTerm: VarianceSwapResult | null;
+  targetDays: number | null;
+  isInterpolated: boolean;
+}
+```
+
+### PriceObservation
+
+```typescript
+interface PriceObservation {
+  price: number;
+  timestamp: number;  // milliseconds
+}
+```
+
+### RealizedVolatilityResult
+
+```typescript
+interface RealizedVolatilityResult {
+  realizedVolatility: number;   // annualized, decimal
+  annualizedVariance: number;
+  quadraticVariation: number;   // raw sum of squared log returns
+  numObservations: number;
+  numReturns: number;
+  elapsedMinutes: number;
+  elapsedYears: number;
+  firstObservation: number;
+  lastObservation: number;
 }
 ```

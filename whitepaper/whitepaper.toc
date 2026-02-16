@@ -1,25 +1,57 @@
-\contentsline {section}{\numberline {1}Motivation}{3}{section.1}%
-\contentsline {section}{\numberline {2}Introducing \texttt {floe}}{3}{section.2}%
-\contentsline {section}{\numberline {3}Paper Structure}{3}{section.3}%
-\contentsline {section}{\numberline {4}Real-time Dealer Exposure Calculations}{3}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Initialization Phase: Capturing Open Interest}{4}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}Implied Volatility Surface Construction}{4}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Total Variance Smoothing}{4}{subsection.4.3}%
-\contentsline {subsection}{\numberline {4.4}Dealer Position Assumption}{5}{subsection.4.4}%
-\contentsline {subsection}{\numberline {4.5}Calculate Greeks for Each Option}{5}{subsection.4.5}%
-\contentsline {subsection}{\numberline {4.6}Exposure Formulas}{5}{subsection.4.6}%
-\contentsline {subsection}{\numberline {4.7}Total Exposures}{6}{subsection.4.7}%
-\contentsline {subsection}{\numberline {4.8}Real-Time Update Process}{6}{subsection.4.8}%
+\contentsline {section}{\numberline {1}Motivation}{4}{section.1}%
+\contentsline {section}{\numberline {2}Introducing \texttt {floe}}{4}{section.2}%
+\contentsline {section}{\numberline {3}Paper Structure}{4}{section.3}%
+\contentsline {section}{\numberline {4}Real-time Dealer Exposure Calculations}{4}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Initialization Phase: Capturing Open Interest}{5}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Implied Volatility Surface Construction}{5}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Total Variance Smoothing}{5}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Dealer Position Assumption}{6}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Calculate Greeks for Each Option}{6}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Exposure Formulas}{6}{subsection.4.6}%
+\contentsline {subsection}{\numberline {4.7}Total Exposures}{7}{subsection.4.7}%
+\contentsline {subsection}{\numberline {4.8}Real-Time Update Process}{7}{subsection.4.8}%
 \contentsline {subsection}{\numberline {4.9}Live Open Interest Tracking}{7}{subsection.4.9}%
-\contentsline {subsection}{\numberline {4.10}Minimum Broker Requirements}{7}{subsection.4.10}%
-\contentsline {section}{\numberline {5}Black-Scholes Greeks Calculation}{7}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Core Parameters}{7}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}First-Order Greeks}{8}{subsection.5.2}%
-\contentsline {subsection}{\numberline {5.3}Second-Order Greeks}{8}{subsection.5.3}%
-\contentsline {section}{\numberline {6}Implied Probability Distribution}{8}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Theoretical Foundation}{9}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}Numerical Implementation}{9}{subsection.6.2}%
-\contentsline {section}{\numberline {7}Shares Needed to Cover}{9}{section.7}%
-\contentsline {section}{\numberline {8}Future Work}{10}{section.8}%
-\contentsline {section}{\numberline {9}Summary}{10}{section.9}%
-\contentsline {section}{\numberline {A}Repository}{11}{appendix.A}%
+\contentsline {subsection}{\numberline {4.10}Minimum Broker Requirements}{8}{subsection.4.10}%
+\contentsline {section}{\numberline {5}Black-Scholes Greeks Calculation}{8}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Core Parameters}{8}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}First-Order Greeks}{9}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Second-Order Greeks}{9}{subsection.5.3}%
+\contentsline {section}{\numberline {6}Implied Probability Distribution}{9}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Theoretical Foundation}{10}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Numerical Implementation}{10}{subsection.6.2}%
+\contentsline {section}{\numberline {7}Exposure-Adjusted Implied Probability Distribution}{10}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Theoretical Motivation}{11}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Adjustment Framework}{11}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Gamma Modifier: Kurtosis Adjustment}{11}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Vanna Modifier: Tail Adjustment}{12}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}Charm Adjustment: Mean Shift}{13}{subsection.7.5}%
+\contentsline {subsection}{\numberline {7.6}Summary Statistics}{14}{subsection.7.6}%
+\contentsline {subsection}{\numberline {7.7}Configuration by Market Regime}{14}{subsection.7.7}%
+\contentsline {subsection}{\numberline {7.8}Interpretation and Application}{15}{subsection.7.8}%
+\contentsline {section}{\numberline {8}Hedge Flow Analysis: Impulse Curve and Charm Integral}{15}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Motivation: Dollar Exposures as Sufficient Statistics}{15}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}The Hedge Impulse: Combining Gamma and Vanna}{16}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Regime Derivation from the IV Surface}{17}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Deriving the Spot-Vol Coupling from the IV Surface}{18}{subsection.8.4}%
+\contentsline {subsection}{\numberline {8.5}Mapping from Strike Space to Price Space}{18}{subsection.8.5}%
+\contentsline {subsubsection}{\numberline {8.5.1}Adaptive Kernel Width}{19}{subsubsection.8.5.1}%
+\contentsline {subsection}{\numberline {8.6}Curve Analysis}{19}{subsection.8.6}%
+\contentsline {subsubsection}{\numberline {8.6.1}Zero Crossings}{20}{subsubsection.8.6.1}%
+\contentsline {subsubsection}{\numberline {8.6.2}Basins and Peaks}{20}{subsubsection.8.6.2}%
+\contentsline {subsubsection}{\numberline {8.6.3}Directional Asymmetry}{20}{subsubsection.8.6.3}%
+\contentsline {subsubsection}{\numberline {8.6.4}Regime Classification}{21}{subsubsection.8.6.4}%
+\contentsline {subsection}{\numberline {8.7}Charm Integral: Unconditional Time Pressure}{21}{subsection.8.7}%
+\contentsline {subsection}{\numberline {8.8}Real-Time Recalculation on Open Interest Changes}{22}{subsection.8.8}%
+\contentsline {section}{\numberline {9}Model-Free Implied Volatility and Realized Volatility}{22}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Model-Free Implied Volatility}{22}{subsection.9.1}%
+\contentsline {subsubsection}{\numberline {9.1.1}Strike Spacing}{23}{subsubsection.9.1.1}%
+\contentsline {subsubsection}{\numberline {9.1.2}Single-Expiration Mode}{23}{subsubsection.9.1.2}%
+\contentsline {subsubsection}{\numberline {9.1.3}Two-Term Interpolation}{24}{subsubsection.9.1.3}%
+\contentsline {subsection}{\numberline {9.2}Tick-Based Realized Volatility}{24}{subsection.9.2}%
+\contentsline {subsubsection}{\numberline {9.2.1}Design: Tick-Level, Not Windowed}{25}{subsubsection.9.2.1}%
+\contentsline {subsection}{\numberline {9.3}The Intraday Variance Risk Premium}{25}{subsection.9.3}%
+\contentsline {subsection}{\numberline {9.4}Term Structure Signals}{25}{subsection.9.4}%
+\contentsline {section}{\numberline {10}Shares Needed to Cover}{26}{section.10}%
+\contentsline {section}{\numberline {11}Future Work}{26}{section.11}%
+\contentsline {section}{\numberline {12}Summary}{27}{section.12}%
+\contentsline {section}{\numberline {A}Repository}{28}{appendix.A}%

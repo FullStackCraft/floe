@@ -49,7 +49,7 @@ The mathematical foundation of \texttt{floe} rests upon the seminal work of Blac
 
 \section{Paper Structure}
 
-The remainder of this paper is organized as follows. Section~\ref{sec:realtime-dealer-exposure-calculations}, the main focus of this paper, describes our process of calculating in real-time a smoothed implied volatility surface, live open interest, and the dealer exposures derived from them. Subsequent sections detail the Black-Scholes Greeks calculations, implied probability distributions, and the exposure-adjusted PDF framework. Section~\ref{sec:hedge-flow} introduces hedge flow analysis: the hedge impulse curve for instantaneous dealer response modeling and the charm integral for time-decay pressure quantification. Section~\ref{sec:iv-rv} develops model-free implied volatility using the variance swap methodology and tick-based realized volatility for intraday variance risk premium analysis. All following sections detail additional analytics that \texttt{floe} can compute.
+The remainder of this paper is divided into two broad sections: the first and main focus of this paper, Section~\ref{sec:realtime-dealer-exposure-calculations} describes our process of calculating in real-time both a smoothed implied volatility surface, the live open interest, and the dealer exposures derived from it. All following sections detail the variety of other options related pricing and analytics that \texttt{floe} can compute.
 
 \section{Real-time Dealer Exposure Calculations}
 \label{sec:realtime-dealer-exposure-calculations}
@@ -330,7 +330,7 @@ where $\alpha_\Gamma \in [0, 1]$ is the adjustment strength parameter and $\psi(
 \psi(K, K_i) = \frac{1}{1 + \lambda \left(\frac{K - K_i}{S}\right)^2}
 \end{align}
 
-with decay rate $\lambda > 0$. This formulation treats GEX concentrations analogously to charges in an electrostatic field, where influence decays with the square of normalized distance---consistent with a localized influence model where nearby exposures dominate.
+with decay rate $\lambda > 0$. This formulation treats GEX concentrations analogously to charges in an electrostatic field, where influence decays with the square of normalized distance---consistent with the ``local hedge pressure field'' concept.
 
 For strikes with substantial positive GEX, the modifier increases probability density (attractor effect), while negative GEX decreases density (repellent effect). The net result is increased kurtosis around major GEX concentrations and reduced probability mass in negative gamma regions.
 
@@ -438,78 +438,57 @@ The exposure-adjusted PDF enables several analytical applications:
 It bears emphasis that this adjustment framework represents a heuristic correction rather than a rigorous arbitrage-free pricing model. The parameters require empirical calibration, and the assumption of static exposures over the adjustment horizon introduces model error. Nevertheless, the framework provides a principled approach to incorporating dealer positioning into probability assessments.
 
 
+\section{Shares Needed to Cover}
 
-\section{Hedge Flow Analysis: Impulse Curve and Charm Integral}
-\label{sec:hedge-flow}
+\section{Hedging Pressure Field and IV Path Dynamics}
+\label{sec:pressure-field}
 
-The exposure calculations of Section~\ref{sec:realtime-dealer-exposure-calculations} produce per-strike dollar exposures for gamma, vanna, and charm. The question that follows naturally is: how should these be combined into an actionable representation of dealer positioning? This section develops two complementary metrics that answer orthogonal questions. The \emph{hedge impulse curve} combines gamma and vanna into a single price-space response function via the empirical spot-volatility coupling, answering ``if price moves to level $S$, do dealers amplify or dampen the move?'' The \emph{charm integral} accumulates the expected delta change from time passage alone, answering ``if price does nothing, where does time decay push things?'' The separation is deliberate: these represent conditional and unconditional forces that a trader can reason about independently.
-
-\subsection{Motivation: Dollar Exposures as Sufficient Statistics}
-
-A common approach to constructing composite positioning indicators involves applying time-dependent weighting functions to the different Greek exposures. For instance, one might assign increasing weight to charm and decreasing weight to vanna as expiration approaches. However, this double-counts information already present in the exposures themselves.
-
-The dollar-denominated GEX, VEX, and CEX computed in Section~\ref{sec:realtime-dealer-exposure-calculations} already incorporate all time-to-expiry effects through the Black-Scholes Greeks. Gamma exposure explodes near expiry because $\Gamma \propto 1/(S\sigma\sqrt{\tau})$; vanna exposure collapses because vega decays as $\mathcal{V} \propto S\sqrt{\tau}$; charm acceleration is inherent in $\partial\Delta/\partial t \propto 1/\sqrt{\tau}$. Additional time weighting on top of these values is redundant.
-
-This observation motivates a framework that operates directly on dollar exposures without auxiliary weighting functions, combining them only where a physical relationship justifies the combination.
-
-\subsection{The Hedge Impulse: Combining Gamma and Vanna}
-
-Consider a dealer with aggregate gamma exposure $\Gamma$ and vanna exposure $V$ at a given strike. If spot moves by $\Delta S$, the change in the dealer's delta is approximated by Taylor expansion:
-
-\begin{align}
-\Delta\delta \approx \Gamma \cdot \Delta S + V \cdot \Delta\sigma
-\end{align}
-
-where $\Delta\sigma$ is the implied volatility change accompanying the spot move. Intraday, the spot-volatility relationship is well-approximated by an empirical coupling:
-
-\begin{align}
-\Delta\sigma \approx -k \cdot \frac{\Delta S}{S}
-\label{eq:spot-vol-coupling}
-\end{align}
-
-where $k > 0$ is the spot-vol coupling coefficient. Substituting:
-
-\begin{align}
-\Delta\delta \approx \Delta S \left(\Gamma - \frac{k}{S} \cdot V\right)
-\end{align}
-
-The quantity in parentheses is the \emph{hedge impulse}:
-
-\begin{align}
-\boxed{H = \Gamma - \frac{k}{S} \cdot V}
-\label{eq:hedge-impulse}
-\end{align}
-
-This single scalar captures the net dealer delta hedge change per unit spot move, with vanna's contribution folded in through the spot-vol coupling rather than treated as an independent additive term. When $H > 0$, a spot move triggers dealer hedging that \emph{dampens} the move (mean-reversion). When $H < 0$, dealer hedging \emph{amplifies} the move (trend acceleration).
+The exposure-adjusted PDF framework treats dealer positioning as a static modifier to the probability distribution. However, the dynamics of how hedging flows evolve through time and across price levels---and crucially, how these flows affect implied volatility itself---reveal additional predictive structure. This section develops a pressure field framework that captures these dynamics, building upon the observation that the path of implied volatility is often more predictable than the path of spot prices \cite{bollen2004does, ni2008volatility}.
 
 \subsection{Regime Derivation from the IV Surface}
-\label{subsec:regime-derivation}
 
-The hedge impulse and its derived parameters depend on quantities extracted from the IV surface itself, ensuring portability across underlyings without requiring external data sources (such as VIX levels). Given an IV surface $\sigma(K)$ with strikes $\{K_1, \ldots, K_n\}$, we compute:
+Rather than relying on external regime indicators such as VIX levels, we derive market regime parameters directly from the IV surface itself. The surface encodes three key pieces of information:
 
-\textbf{ATM Implied Volatility.} The base volatility level $\sigma_{\text{ATM}}$ is obtained by linear interpolation at spot $S$:
+\begin{enumerate}
+    \item \textbf{ATM implied volatility} $\sigma_{\text{ATM}}$: The base level of expected volatility
+    \item \textbf{Skew} $\partial \sigma / \partial K$: Encodes the implied spot-volatility correlation
+    \item \textbf{Curvature} $\partial^2 \sigma / \partial K^2$: Encodes the implied volatility-of-volatility
+\end{enumerate}
+
+Given an IV surface $\sigma(K)$ with strikes $\{K_1, \ldots, K_n\}$, we compute the ATM IV by interpolation at spot $S$:
 
 \begin{align}
 \sigma_{\text{ATM}} = \sigma(S) \approx \sigma(K_i) + \frac{S - K_i}{K_{i+1} - K_i} \left(\sigma(K_{i+1}) - \sigma(K_i)\right)
 \end{align}
 
-\textbf{Skew and Spot-Vol Correlation.} The IV skew at ATM encodes the implied spot-volatility correlation $\rho_{S\sigma}$:
+where $K_i \leq S < K_{i+1}$.
+
+The skew at ATM is estimated via finite differences:
 
 \begin{align}
-\text{Skew} = \left.\frac{\partial \sigma}{\partial K}\right|_{K=S} \cdot S \quad \Longrightarrow \quad \rho_{S\sigma} \approx \kappa_{\text{skew}} \cdot \text{Skew}
+\text{Skew} = \left.\frac{\partial \sigma}{\partial K}\right|_{K=S} \approx \frac{\sigma(K_{i+1}) - \sigma(K_{i-1})}{K_{i+1} - K_{i-1}} \cdot S
 \end{align}
 
-where $\kappa_{\text{skew}} \approx 0.15$ is calibrated from stochastic volatility models (SABR, Heston). For equity indices, $\rho_{S\sigma}$ is typically in $[-0.9, -0.5]$.
+The normalization by $S$ makes the skew dimensionless and comparable across underlyings.
 
-\textbf{Curvature and Vol-of-Vol.} The smile curvature encodes the implied volatility-of-volatility $\nu$:
+From stochastic volatility models such as SABR and Heston, the skew relates to the instantaneous spot-volatility correlation $\rho_{S\sigma}$:
 
 \begin{align}
-\text{Curvature} = \left.\frac{\partial^2 \sigma}{\partial K^2}\right|_{K=S} \cdot S^2, \qquad \nu \approx \kappa_{\text{curv}} \cdot \sigma_{\text{ATM}} \cdot \sqrt{|\text{Curvature}|}
+\rho_{S\sigma} \approx \kappa_{\text{skew}} \cdot \text{Skew}
 \end{align}
 
-with $\kappa_{\text{curv}} \approx 2.0$.
+where $\kappa_{\text{skew}} \approx 0.15$ is an empirically calibrated constant. For equity indices, $\rho_{S\sigma}$ is typically in the range $[-0.9, -0.5]$, reflecting the leverage effect.
 
-\textbf{Regime Classification.} The ATM IV level determines the market regime:
+Similarly, the curvature (the ``smile'' component) encodes the volatility-of-volatility $\nu$:
+
+\begin{align}
+\text{Curvature} &= \left.\frac{\partial^2 \sigma}{\partial K^2}\right|_{K=S} \cdot S^2 \\
+\nu &\approx \kappa_{\text{curv}} \cdot \sigma_{\text{ATM}} \cdot \sqrt{|\text{Curvature}|}
+\end{align}
+
+where $\kappa_{\text{curv}} \approx 2.0$. Higher curvature indicates greater expected volatility of volatility.
+
+The regime is then classified by $\sigma_{\text{ATM}}$:
 
 \begin{center}
 \begin{tabular}{l|c|l}
@@ -522,253 +501,208 @@ Crisis & $\geq 0.35$ & Vanna-dominated dynamics \\
 \end{tabular}
 \end{center}
 
-The expected daily moves used in subsequent calculations are:
+\subsection{Normalizing Greek Exposures}
+
+A key challenge in comparing gamma, vanna, and charm exposures is that they respond to different market variables with different frequencies. Raw exposure values are denominated in incomparable units:
+
+\begin{itemize}
+    \item Gamma exposure: dollars per 1\% spot move squared
+    \item Vanna exposure: dollars per (1\% spot move $\times$ 1 vol point move)
+    \item Charm exposure: dollars per day
+\end{itemize}
+
+To convert these to a common basis---expected daily hedging flow---we multiply each by its expected trigger frequency:
 
 \begin{align}
-\mathbb{E}[\Delta S_{\text{daily}}] = \frac{\sigma_{\text{ATM}}}{\sqrt{252}}, \qquad
-\mathbb{E}[\Delta \sigma_{\text{daily}}] = \frac{\nu}{\sqrt{252}}
-\end{align}
-
-\subsection{Deriving the Spot-Vol Coupling from the IV Surface}
-\label{subsec:k-derivation}
-
-Rather than treating $k$ as a hardcoded parameter, we derive it from observable IV surface characteristics. From stochastic volatility models (e.g., SABR, Heston), the IV skew encodes the instantaneous spot-volatility correlation $\rho_{S\sigma}$:
-
-\begin{align}
-\text{Skew} = \left.\frac{\partial \sigma}{\partial K}\right|_{K=S} \cdot S \quad \Longrightarrow \quad \rho_{S\sigma} \approx \kappa_{\text{skew}} \cdot \text{Skew}
-\end{align}
-
-The spot-vol coupling coefficient is then:
-
-\begin{align}
-k = -\rho_{S\sigma} \cdot \sigma_{\text{ATM}} \cdot \sqrt{252}
-\end{align}
-
-where the annualization factor converts from instantaneous to daily coupling. For equity indices with typical skew parameters, this yields $k \in [4, 12]$, consistent with empirical observations. Crucially, because $k$ is derived from the IV surface itself, it automatically adapts to different underlyings and market regimes without manual calibration.
-
-\subsection{Mapping from Strike Space to Price Space}
-\label{subsec:kernel-smoothing}
-
-The per-strike exposures $\text{GEX}_K$ and $\text{VEX}_K$ are defined at discrete listed strikes. To evaluate the hedge impulse at arbitrary price levels---necessary for identifying zero crossings and computing directional asymmetry---we smooth these into continuous functions of price using Gaussian kernel interpolation:
-
-\begin{align}
-\text{GEX}(S') &= \frac{\sum_K \text{GEX}_K \cdot w(K, S')}{\sum_K w(K, S')} \\[6pt]
-\text{VEX}(S') &= \frac{\sum_K \text{VEX}_K \cdot w(K, S')}{\sum_K w(K, S')}
-\end{align}
-
-where the kernel weight function is:
-
-\begin{align}
-w(K, S') = \exp\!\left(-\left(\frac{K - S'}{\lambda}\right)^2\right)
-\end{align}
-
-\subsubsection{Adaptive Kernel Width}
-
-A fixed percentage kernel width (e.g., $\lambda = 0.5\%$ of spot) produces inconsistent smoothing across underlyings with different strike spacings. For SPX with 5-point strikes at $S = 6000$, a 0.5\% kernel spans 6 strikes. For NQ with 25-point strikes at $S = 21500$, the same percentage spans fewer than 2 strikes.
-
-Instead, we define the kernel width in terms of the underlying's strike spacing:
-
-\begin{align}
-\lambda = n_\lambda \cdot \Delta K_{\text{modal}}
-\end{align}
-
-where $\Delta K_{\text{modal}}$ is the most common (modal) strike spacing in the option chain and $n_\lambda$ is a configurable multiplier (default $n_\lambda = 2$). This ensures consistent smoothing behavior---approximately 2 strikes of meaningful blending---regardless of the underlying's contract specifications.
-
-The hedge impulse at each price level $S'$ is then:
-
-\begin{align}
-H(S') = \text{GEX}(S') - \frac{k}{S'} \cdot \text{VEX}(S')
-\end{align}
-
-evaluated on a fine grid $S' \in [S(1 - r), S(1 + r)]$ with step size $\delta$ (defaults: $r = 3\%$, $\delta = 0.05\%$ of spot).
-
-\subsection{Curve Analysis}
-
-The hedge impulse curve $H(S')$ encodes the complete instantaneous dealer response landscape. We extract the following features:
-
-\subsubsection{Zero Crossings}
-
-Points where $H(S') = 0$ are \emph{gamma-vanna flip levels}. These are found by linear interpolation between adjacent grid points of opposite sign:
-
-\begin{align}
-S'_{\text{flip}} = S'_i + \frac{|H(S'_i)|}{|H(S'_i)| + |H(S'_{i+1})|} \cdot (S'_{i+1} - S'_i) \quad \text{where } H(S'_i) \cdot H(S'_{i+1}) < 0
-\end{align}
-
-Each crossing is classified as \emph{rising} ($H$ goes negative to positive) or \emph{falling} ($H$ goes positive to negative). Rising crossings mark transitions from acceleration zones into dampening zones; falling crossings mark the reverse.
-
-\subsubsection{Basins and Peaks}
-
-Local maxima of $H$ where $H > 0$ are \emph{basins} (attractors): price levels where dealer hedging creates maximal mean-reversion. These correspond to ``gamma walls'' or ``pin levels'' in trader parlance.
-
-Local minima where $H < 0$ are \emph{peaks} (accelerators): levels of maximal trend amplification, corresponding to ``liquidity vacuums'' where dealer hedging chases price away.
-
-\subsubsection{Directional Asymmetry}
-
-The directional bias is determined by integrating $H$ over symmetric intervals above and below spot:
-
-\begin{align}
-\mathcal{I}_{\text{up}} &= \int_S^{S(1+\alpha)} H(S') \, dS' \\
-\mathcal{I}_{\text{down}} &= \int_{S(1-\alpha)}^{S} H(S') \, dS'
-\end{align}
-
-where $\alpha$ is the integration range (default 0.5\%). The side with more negative integral is the \emph{path of least resistance}: dealer hedging provides less resistance (or more amplification) in that direction. Note that this is the opposite sign convention from what intuition might suggest---more negative impulse means more acceleration, which means price travels more easily in that direction.
-
-\subsubsection{Regime Classification}
-
-The curve shape at current spot determines the regime:
-
-\begin{center}
-\begin{tabular}{l|l|l}
-\textbf{Regime} & \textbf{Condition} & \textbf{Interpretation} \\
-\hline
-Pinned & $H(S) \gg 0$ & Strong mean-reversion at current level \\
-Expansion & $H(S) \ll 0$, symmetric & Price will break away, direction uncertain \\
-Squeeze-up & $H(S) < 0$, $\mathcal{I}_{\text{up}} < \mathcal{I}_{\text{down}}$ & Upside acceleration dominates \\
-Squeeze-down & $H(S) < 0$, $\mathcal{I}_{\text{down}} < \mathcal{I}_{\text{up}}$ & Downside acceleration dominates \\
-Neutral & $|H(S)| \approx 0$ & Weak or mixed signals \\
-\end{tabular}
-\end{center}
-
-\subsection{Charm Integral: Unconditional Time Pressure}
-
-While the hedge impulse answers ``what happens if price moves,'' the charm integral answers the complementary question: ``what happens from time passage alone.'' These two analyses are intentionally separated because they describe orthogonal forces.
-
-The charm integral from the current time $t$ to expiration $T$ is:
-
-\begin{align}
-\mathcal{C}(t, T) = \int_t^T \text{CEX}(u) \, du
-\end{align}
-
-where $\text{CEX}(u)$ is the charm exposure at time $u$. Because charm accelerates as $\partial\Delta/\partial t \propto 1/\sqrt{\tau}$, the instantaneous CEX at time $u$ (with $\tau_u = T - u$ remaining) scales relative to the current CEX (with $\tau_t = T - t$ remaining) as:
-
-\begin{align}
-\text{CEX}(u) \approx \text{CEX}(t) \cdot \sqrt{\frac{\tau_t}{\tau_u}}
-\end{align}
-
-In practice, we discretize into time buckets of width $\Delta t$ (default 15 minutes) and compute the cumulative sum:
-
-\begin{align}
-\mathcal{C}_n = \sum_{j=0}^{n} \text{CEX}(t_j) \cdot \frac{\Delta t}{T_{\text{session}}}
-\end{align}
-
-where $T_{\text{session}} = 390$ minutes (standard U.S. equity session). The sign of $\mathcal{C}$ indicates the direction of charm-driven pressure: positive implies net buying pressure (dealers must buy to offset delta decay), negative implies net selling pressure.
-
-\subsection{Real-Time Recalculation on Open Interest Changes}
-
-Both the impulse curve and charm integral are functions of the current exposure landscape, which depends on open interest. When live OI tracking (Section~\ref{sec:realtime-dealer-exposure-calculations}) detects a change---for instance, a large block of puts opening at a new strike---the exposures at that strike change, propagating through both analyses:
-
-\begin{enumerate}
-    \item New GEX/VEX at the affected strike shifts the impulse curve locally, potentially creating or eliminating zero crossings and altering the directional asymmetry.
-    \item New CEX at the affected strike modifies the charm integral, changing both the total charm-to-close and the shape of the cumulative curve.
-\end{enumerate}
-
-This self-updating property means the analysis does not require a separate ``confirmation layer''---the model incorporates new information organically as positioning evolves through the session.
-
-
-
-\section{Model-Free Implied Volatility and Realized Volatility}
-\label{sec:iv-rv}
-
-The dealer exposure and hedge flow frameworks developed in preceding sections operate on the positioning landscape at a single point in time. A complementary question concerns the aggregate volatility expectations embedded in option prices and how they compare to the volatility actually being realized in the underlying. This section develops two metrics: a \emph{model-free implied volatility} computed from the full option chain using the CBOE variance swap methodology, and a \emph{tick-based realized volatility} computed from streaming price observations. Together, these enable real-time monitoring of the variance risk premium---the spread between what the market expects and what is occurring.
-
-\subsection{Model-Free Implied Volatility}
-
-Traditional implied volatility is extracted from individual option prices by inverting the Black-Scholes formula. This produces a strike-dependent and model-dependent measure. In contrast, the model-free approach aggregates information from the entire option chain to produce a single implied variance that does not depend on any pricing model.
-
-The methodology follows the CBOE VIX calculation \cite{cboe2023vix}. For a given expiration with time to expiry $T$, the implied variance is:
-
-\begin{align}
-\sigma^2 = \frac{2}{T} \sum_i \frac{\Delta K_i}{K_i^2} e^{rT} Q(K_i) - \frac{1}{T}\left(\frac{F}{K_0} - 1\right)^2
-\label{eq:variance-swap}
+\text{GEX}_{\text{eff}} &= \text{GEX} \cdot \mathbb{E}[\Delta S_{\text{daily}}] \\
+\text{VEX}_{\text{eff}} &= \text{VEX} \cdot \mathbb{E}[\Delta S_{\text{daily}}] \cdot \mathbb{E}[\Delta \sigma_{\text{daily}}] \cdot (1 + |\rho_{S\sigma}|) \cdot \chi_{\text{regime}} \\
+\text{CEX}_{\text{eff}} &= \text{CEX}
 \end{align}
 
 where:
-\begin{itemize}
-    \item $K_0$ is the at-the-money strike, defined as the strike where $|C(K) - P(K)|$ is minimized
-    \item $F = K_0 + e^{rT}(C(K_0) - P(K_0))$ is the forward price derived from put-call parity
-    \item $Q(K_i)$ is the midpoint price of the out-of-the-money option at strike $K_i$: put prices for $K_i < K_0$, call prices for $K_i > K_0$, and the average of put and call at $K_0$
-    \item $\Delta K_i = (K_{i+1} - K_{i-1})/2$ is the half-distance between adjacent strikes (computed from the actual chain, not assumed constant)
-    \item $r$ is the risk-free rate and $T$ is time to expiry in years
-\end{itemize}
-
-The summation walks outward from $K_0$ in both directions, terminating after two consecutive zero-bid strikes per the CBOE convention. The annualized implied volatility is $\sigma_{\text{IV}} = \sqrt{\sigma^2}$.
-
-\subsubsection{Strike Spacing}
-
-A common implementation shortcut assumes uniform strike spacing ($\Delta K = 1$ for SPY). Our implementation computes $\Delta K_i$ from the actual strike array, making the formula applicable to any optionable underlying regardless of its listed strike structure---from SPY with \$1 strikes to AMZN with \$5 strikes to index options with varying increments across the chain.
-
-\subsubsection{Single-Expiration Mode}
-
-When applied to a single expiration, equation~(\ref{eq:variance-swap}) produces the model-free implied volatility for that specific term. This is the primary mode for 0DTE analysis: computing IV from today's expiring options gives the market's real-time pricing of expected intraday movement.
-
-Near expiry, $T$ becomes small, which amplifies both the variance sum (via $2/T$) and the forward price correction (via $1/T$). The measure therefore becomes increasingly sensitive to the quality of option quotes as expiration approaches---a feature, not a bug, since this sensitivity captures the market's rapidly updating expectations for the remaining session.
-
-\subsubsection{Two-Term Interpolation}
-
-When two expirations are provided (near-term and far-term), the implied variance can be interpolated to a target constant maturity, following the CBOE VIX interpolation formula:
-
 \begin{align}
-\sigma_{\text{target}}^2 = \left[T_1 \sigma_1^2 \cdot \frac{N_{T_2} - N_{\text{target}}}{N_{T_2} - N_{T_1}} + T_2 \sigma_2^2 \cdot \frac{N_{\text{target}} - N_{T_1}}{N_{T_2} - N_{T_1}}\right] \cdot \frac{N_{365}}{N_{\text{target}}}
+\mathbb{E}[\Delta S_{\text{daily}}] &= \frac{\sigma_{\text{ATM}}}{\sqrt{252}} \\
+\mathbb{E}[\Delta \sigma_{\text{daily}}] &= \frac{\nu}{\sqrt{252}}
 \end{align}
 
-where $N_{T_1}$, $N_{T_2}$, $N_{\text{target}}$, and $N_{365}$ are the respective durations in milliseconds, and $\sigma_1^2$, $\sigma_2^2$ are the per-term variances from equation~(\ref{eq:variance-swap}).
-
-This mode enables reconstruction of the standard CBOE VIX (using $\sim$23-day and $\sim$37-day terms to target 30 days) or any custom constant-maturity measure. For 0DTE analysis, interpolating between 0DTE and 1DTE options produces a constant-maturity ``overnight'' volatility measure.
-
-\subsection{Tick-Based Realized Volatility}
-\label{subsec:realized-vol}
-
-Realized volatility is the empirical counterpart to implied volatility: instead of asking ``what does the market expect?'' it answers ``what is actually happening?''
-
-Given a sequence of $n$ price observations $\{P_1, P_2, \ldots, P_n\}$ with timestamps $\{t_1, t_2, \ldots, t_n\}$, the realized quadratic variation is:
-
-\begin{align}
-QV = \sum_{i=1}^{n-1} \left(\ln\frac{P_{i+1}}{P_i}\right)^2
-\end{align}
-
-This is annualized by the elapsed observation period:
-
-\begin{align}
-\sigma_{\text{RV}} = \sqrt{\frac{QV}{\Delta t_{\text{elapsed}}} \cdot N_{\text{year}}}
-\end{align}
-
-where $\Delta t_{\text{elapsed}} = t_n - t_1$ and $N_{\text{year}}$ is the number of milliseconds per year.
-
-\subsubsection{Design: Tick-Level, Not Windowed}
-
-A common approach to intraday realized volatility uses fixed-interval sampling (e.g., 1-minute or 5-minute returns). In a streaming context where price updates arrive on every trade or quote change, fixed windows discard information between samples. Our implementation operates on all available price observations without windowing: the consumer passes the complete set of observations accumulated since session open, and the function computes from the full series.
-
-Early in the session with few observations, the estimate is noisy. As the session progresses and thousands of ticks accumulate, the law of large numbers ensures convergence. This natural stabilization matches the behavior traders expect: uncertainty about realized vol is high at the open and resolves through the day.
-
-\subsection{The Intraday Variance Risk Premium}
-
-The spread between implied and realized volatility:
-
-\begin{align}
-\text{VRP}_{\text{intraday}} = \sigma_{\text{IV}}^{0\text{DTE}} - \sigma_{\text{RV}}
-\end{align}
-
-is the \emph{intraday variance risk premium}. When $\text{VRP} > 0$, options are pricing in more volatility than is being realized (options are ``expensive''). When $\text{VRP} < 0$, realized movement is exceeding expectations (options are ``cheap'').
-
-This metric updates in real time as both components respond to market activity: the 0DTE IV adjusts with every option quote change, and the RV accumulates with every underlying price tick. The convergence or divergence of these two measures through the session provides a continuous signal about whether option prices are fair relative to the actual dynamics of the underlying.
-
-\subsection{Term Structure Signals}
-
-When computing IV for multiple expirations (e.g., 0DTE and 1DTE), the term structure slope carries additional information:
+The correlation amplifier $(1 + |\rho_{S\sigma}|)$ reflects that when spot and volatility move together (as they typically do for equities), vanna's effect is amplified. The regime multiplier $\chi_{\text{regime}}$ captures the empirical observation that volatility-of-volatility increases nonlinearly with the volatility level:
 
 \begin{center}
-\begin{tabular}{l|l}
-\textbf{Condition} & \textbf{Interpretation} \\
+\begin{tabular}{l|c}
+\textbf{Regime} & $\chi_{\text{regime}}$ \\
 \hline
-$\sigma_{\text{IV}}^{0\text{DTE}} \gg \sigma_{\text{IV}}^{1\text{DTE}}$ & Event-driven session (FOMC, CPI, earnings) \\
-$\sigma_{\text{IV}}^{0\text{DTE}} \ll \sigma_{\text{IV}}^{1\text{DTE}}$ & Quiet session; volatility expected tomorrow \\
-$\sigma_{\text{IV}}^{0\text{DTE}} \approx \sigma_{\text{IV}}^{1\text{DTE}}$ & No unusual term structure; typical conditions \\
+Calm & 0.5 \\
+Normal & 1.0 \\
+Stressed & 2.5 \\
+Crisis & 5.0 \\
 \end{tabular}
 \end{center}
 
-This term structure signal, combined with the variance risk premium, provides a two-dimensional view of the volatility landscape: whether today is special relative to tomorrow, and whether the market's pricing is accurate relative to reality.
+The relative weights of each Greek are then:
 
-\section{Shares Needed to Cover}
+\begin{align}
+w_\Gamma &= \frac{|\text{GEX}_{\text{eff}}|}{|\text{GEX}_{\text{eff}}| + |\text{VEX}_{\text{eff}}| + |\text{CEX}_{\text{eff}}|} \\
+w_V &= \frac{|\text{VEX}_{\text{eff}}|}{|\text{GEX}_{\text{eff}}| + |\text{VEX}_{\text{eff}}| + |\text{CEX}_{\text{eff}}|} \\
+w_C &= \frac{|\text{CEX}_{\text{eff}}|}{|\text{GEX}_{\text{eff}}| + |\text{VEX}_{\text{eff}}| + |\text{CEX}_{\text{eff}}|}
+\end{align}
+
+This normalization reveals the dominant Greek under current market conditions. In calm markets, charm often dominates due to stable day-over-day decay. In crisis conditions, vanna can exceed gamma in importance despite lower notional exposure, because vol-of-vol amplifies its effect.
+
+\subsection{The Hedging Pressure Field}
+
+We define a hedging pressure field $P(S', t')$ over the space of hypothetical spot levels $S'$ and times-to-expiry $t'$. At each point, the pressure represents the net hedging flow that would be required if spot were at $S'$ with $t'$ time remaining:
+
+\begin{align}
+P(S', t') = P_\Gamma(S', t') + P_V(S', t') + P_C(S', t')
+\end{align}
+
+where each component is computed by re-evaluating the Greeks at the hypothetical $(S', t')$ coordinate and applying the exposure formulas from Section~\ref{sec:realtime-dealer-exposure-calculations}.
+
+For computational efficiency, we discretize this field on a grid:
+
+\begin{align}
+S'_i &= S \cdot (1 + i \cdot \delta_S), \quad i \in \{-N_S, \ldots, N_S\} \\
+t'_j &= t - j \cdot \delta_t, \quad j \in \{0, \ldots, N_t\}
+\end{align}
+
+where $\delta_S$ is the spot step (e.g., 0.1\% of spot) and $\delta_t$ is the time step (e.g., 15 minutes converted to years).
+
+The pressure gradient reveals the directional tendency:
+
+\begin{align}
+\nabla P = \left(\frac{\partial P}{\partial S'}, \frac{\partial P}{\partial t'}\right)
+\end{align}
+
+Regions where $P > 0$ indicate net buying pressure (supportive), while $P < 0$ indicates net selling pressure (resistive). The zero-crossings of $P$ define key support and resistance levels.
+
+\subsection{Key Level Identification}
+
+From the pressure field, we identify three types of key levels:
+
+\textbf{Support levels}: Points where pressure transitions from negative to positive as price decreases:
+\begin{align}
+K_{\text{support}} = \{S' : P(S' - \epsilon, t) < 0 \text{ and } P(S' + \epsilon, t) \geq 0\}
+\end{align}
+
+\textbf{Resistance levels}: Points where pressure transitions from positive to negative as price increases:
+\begin{align}
+K_{\text{resistance}} = \{S' : P(S' - \epsilon, t) \geq 0 \text{ and } P(S' + \epsilon, t) < 0\}
+\end{align}
+
+\textbf{Pinning levels}: Strikes with locally maximal positive gamma exposure, which act as attractors:
+\begin{align}
+K_{\text{pin}} = \{K : \text{GEX}_K > 0 \text{ and } \text{GEX}_K = \max_{|K' - K| < \epsilon S} \text{GEX}_{K'}\}
+\end{align}
+
+The path of least resistance is determined by comparing average pressure above and below current spot:
+
+\begin{align}
+\bar{P}_{\text{above}} &= \frac{1}{N} \sum_{S' > S} P(S', t) \\
+\bar{P}_{\text{below}} &= \frac{1}{N} \sum_{S' < S} P(S', t)
+\end{align}
+
+If $\bar{P}_{\text{above}} > 0$ and $\bar{P}_{\text{below}} < 0$, the path favors upward movement. The converse suggests downward pressure. Strong positive pressure at current spot suggests pinning behavior.
+
+\subsection{IV Pressure and Surface Evolution}
+
+A key observation, emphasized by practitioners such as Cem Karsan, is that the reflexive effects on implied volatility are often stronger and more predictable than the effects on spot price. This is because:
+
+\begin{enumerate}
+    \item IV is less liquid than spot, so hedging flows have larger impact
+    \item Fewer non-dealer flows compete with hedging in vol space
+    \item Vol dynamics are more mechanically determined by positioning
+\end{enumerate}
+
+We define IV pressure at each strike as the expected change in IV from dealer hedging:
+
+\begin{align}
+\Delta \sigma_K^{\text{vanna}} &= -\frac{\text{Vanna}_K \cdot \Delta S}{\text{Liquidity}_K} \cdot \xi_{\text{IV}} \\
+\Delta \sigma_K^{\text{vomma}} &= \frac{\text{Vomma}_K \cdot (\Delta \sigma)^2}{\text{Liquidity}_K} \cdot \xi_{\text{IV}} \\
+\Delta \sigma_K^{\text{veta}} &= \frac{\text{Veta}_K \cdot \Delta t}{\text{Liquidity}_K} \cdot \xi_{\text{IV}}
+\end{align}
+
+where $\xi_{\text{IV}}$ is an IV impact coefficient (vol points per million dollars of flow) and $\text{Liquidity}_K$ is a relative liquidity score that decreases with distance from ATM:
+
+\begin{align}
+\text{Liquidity}_K = \max\left(0.1, 1 - 0.4 \cdot \frac{|\ln(K/S)|}{\sigma_{\text{ATM}}}\right)
+\end{align}
+
+The total IV pressure at strike $K$ is:
+
+\begin{align}
+\Delta \sigma_K = \Delta \sigma_K^{\text{vanna}} + \Delta \sigma_K^{\text{vomma}} + \Delta \sigma_K^{\text{veta}}
+\end{align}
+
+The predicted IV surface after a spot move $\Delta S$ and time step $\Delta t$ is:
+
+\begin{align}
+\sigma'(K) = \sigma(K) + \Delta \sigma_K
+\end{align}
+
+subject to floor and ceiling constraints (typically 5\% $\leq \sigma' \leq$ 200\%).
+
+\subsection{Cascade Simulation}
+
+The feedback between IV changes and hedging flows creates a dynamic cascade that can be simulated iteratively:
+
+\begin{algorithm}
+\caption{Cascade Simulation}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Initial surface $\Sigma_0$, exposures $E_0$, spot $S_0$, shock $\Delta S_0$
+\State Initialize: $S \leftarrow S_0 \cdot (1 + \Delta S_0)$, $\Sigma \leftarrow \Sigma_0$, $E \leftarrow E_0$
+\State $\text{IV}_{\text{cum}} \leftarrow 0$, $\text{Spot}_{\text{cum}} \leftarrow \Delta S_0$
+\For{$i = 1$ to $N_{\text{iter}}$}
+    \State Compute IV pressure: $\Delta \sigma \leftarrow \textsc{IVPressure}(\Sigma, E, S, \Delta S_0 \cdot \rho^{i-1})$
+    \State Update surface: $\Sigma \leftarrow \Sigma + \Delta \sigma \cdot \rho^{i-1}$
+    \State Estimate spot pressure from IV change: $\Delta S \leftarrow \text{VEX} \cdot \Delta \sigma_{\text{ATM}} / (S \cdot 10^9)$
+    \State Update spot: $S \leftarrow S \cdot (1 + \Delta S \cdot \rho^{i-1})$
+    \State Accumulate: $\text{IV}_{\text{cum}} \leftarrow \text{IV}_{\text{cum}} + \Delta \sigma_{\text{ATM}} \cdot \rho^{i-1}$
+    \State Accumulate: $\text{Spot}_{\text{cum}} \leftarrow \text{Spot}_{\text{cum}} + \Delta S \cdot \rho^{i-1}$
+\EndFor
+\State \textbf{Output:} Terminal $(S, \Sigma)$, cumulative moves, convergence status
+\end{algorithmic}
+\end{algorithm}
+
+The dampening factor $\rho \in (0, 1)$ (typically 0.5) ensures the cascade converges. The simulation outcome is classified as:
+
+\begin{itemize}
+    \item \textbf{Converged}: Successive iterations decrease in magnitude
+    \item \textbf{Diverged}: Successive iterations increase (unstable positioning)
+    \item \textbf{Oscillating}: Alternating signs suggest conflicting pressures
+\end{itemize}
+
+\subsection{IV Path of Least Resistance}
+
+Analogous to the spot path of least resistance, we can determine the likely direction of IV evolution:
+
+\begin{align}
+\Delta \sigma_{\text{up}} &= \sum_K \Delta \sigma_K \big|_{\Delta S = +1\%} \\
+\Delta \sigma_{\text{down}} &= \sum_K \Delta \sigma_K \big|_{\Delta S = -1\%} \\
+\Delta \sigma_{\text{neutral}} &= \sum_K \Delta \sigma_K \big|_{\Delta S = 0}
+\end{align}
+
+The IV bias is:
+
+\begin{align}
+\text{Bias}_{\text{IV}} = (\Delta \sigma_{\text{down}} + \Delta \sigma_{\text{neutral}}) - \Delta \sigma_{\text{up}}
+\end{align}
+
+Positive bias indicates IV is likely to increase (positioning implies volatility buying on down moves exceeds selling on up moves). This provides a separate, often more reliable, signal than spot direction.
+
+\subsection{Applications}
+
+The pressure field framework enables several practical applications:
+
+\begin{enumerate}
+    \item \textbf{Intraday level identification}: Real-time detection of support, resistance, and pin levels that evolve with positioning
+    \item \textbf{Regime-aware Greek weighting}: Automatic adjustment of which Greek matters most under current conditions
+    \item \textbf{Volatility forecasting}: IV path prediction that is mechanically grounded in positioning
+    \item \textbf{Cascade risk assessment}: Identification of unstable positioning that could amplify market moves
+    \item \textbf{Cross-asset consistency}: The framework applies to any optionable underlying, enabling comparison of hedging dynamics across assets
+\end{enumerate}
+
+The pressure field complements the exposure-adjusted PDF by providing dynamic, path-dependent insights rather than static distributional adjustments.
+
 
 As a sort of global heuristic across all exposures at all strikes for a given expiration, one can estimate the total hedging flow required to neutralize dealer exposure:
 
@@ -788,11 +722,11 @@ This method assumes equal weighting of exposure across all strikes, and that the
 \section{Future Work}
 
 \begin{itemize}
-    \item Calibrate the spot-vol coupling coefficient $k$ (Section~\ref{subsec:k-derivation}) empirically across asset classes and volatility regimes. The current derivation from skew slope is theoretically motivated but would benefit from validation against observed intraday $\Delta\sigma / \Delta S$ relationships.
+    \item Explore concepts of instantaneous local hedge pressure by net exposure at nearest price and how price velocity impacts immediate dealer hedging needs.
     \item Improve nuances of live open interest estimation by weighing the confidence of each change in OI by how far the trade price is from the mid. Trades clearly at the bid or ask have higher signal; trades near mid price are ambiguous as to aggressor side.
-    \item Develop IV surface evolution prediction: given dealer positioning, model how the IV surface itself changes in response to spot moves and time passage. This would involve estimating vanna-driven IV pressure, vomma effects, and iterative cascade simulation where IV changes trigger further hedging flows.
-    \item Backtest the hedge impulse curve's regime classifications and directional asymmetry signals against realized intraday price action to validate predictive utility across different market regimes and underlyings.
-    \item Backtest the exposure-adjusted PDF against realized price distributions to calibrate adjustment parameters and validate the framework's predictive utility.
+    \item Develop a dynamic volatility surface evolution model to replace the static $\beta_{S\sigma}$ parameter in the exposure-adjusted PDF. This would involve estimating the IV surface transition function $\Sigma(t+\Delta t, S+\Delta S) = f(\Sigma(t, S), \Delta S, \Delta t)$ from empirical surface dynamics, enabling more accurate cascade simulation.
+    \item Implement forward price projection via iterative cascade simulation: given an initial perturbation, project the sequence of hedging flows and resulting price movements until convergence or divergence is detected.
+    \item Backtest the exposure-adjusted PDF against realized price distributions to calibrate adjustment parameters and validate the framework's predictive utility across different market regimes.
 \end{itemize}
 
 \section{Summary}
@@ -806,8 +740,6 @@ The complete pipeline for real-time dealer exposure calculation:
     \item \textbf{Aggregate Exposures}: Calculate GEX, VEX, CEX, and sum them for NEX across strikes per expiration
     \item \textbf{Stream Updates}: On each new quote, recalculate IV $\rightarrow$ Greeks $\rightarrow$ Exposures
     \item \textbf{Track Live OI}: Adjust open interest based on observed trades
-    \item \textbf{Analyze Hedge Flow}: Compute impulse curve and charm integral from updated exposures
-    \item \textbf{Compute IV/RV}: Model-free implied volatility from option chains and tick-based realized volatility for variance risk premium monitoring
 \end{enumerate}
 
 This methodology enables sub-second exposure updates, providing actionable insight into market-maker hedging dynamics as market conditions evolve.
@@ -849,11 +781,6 @@ N. G\^{a}rleanu, L. H. Pedersen, and A. M. Poteshman,
 S. X. Ni, J. Pan, and A. M. Poteshman,
 ``Volatility information trading in the option market,''
 \textit{Journal of Finance}, vol. 63, no. 3, pp. 1059--1091, 2008.
-
-\bibitem{cboe2023vix}
-Cboe Global Markets,
-``VIX White Paper: Cboe Volatility Index,''
-2023. Available: \url{https://www.cboe.com/tradable_products/vix/vix_white_paper/}
 
 \end{thebibliography}
 

@@ -374,3 +374,17 @@ export function getQuantile(
 
   return distribution.strikeProbabilities[distribution.strikeProbabilities.length - 1]?.strike ?? 0;
 }
+
+// Re-export exposure-adjusted PDF functionality
+export {
+  estimateExposureAdjustedPDF,
+  getEdgeAtPrice,
+  getSignificantAdjustmentLevels,
+  DEFAULT_ADJUSTMENT_CONFIG,
+  LOW_VOL_CONFIG,
+  CRISIS_CONFIG,
+  OPEX_CONFIG,
+  type ExposureAdjustmentConfig,
+  type AdjustedPDFResult,
+  type PDFComparison,
+} from './adjusted';

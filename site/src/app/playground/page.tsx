@@ -435,6 +435,335 @@ for (const sym of symbols.slice(0, 8)) {
 console.log("  ... and " + (symbols.length - 8) + " more");
 `,
   },
+  "hedge-flow": {
+    title: "Hedge Flow Analysis",
+    description: "Compute the hedge impulse curve and charm integral for dealer positioning analysis",
+    code: `import {
+  getIVSurfaces,
+  calculateGammaVannaCharmExposures,
+  analyzeHedgeFlow,
+  OptionChain,
+  NormalizedOption,
+} from "@fullstackcraftllc/floe";
+
+// Helper: expiration 4 hours from now (simulating 0DTE)
+const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
+const expirationTimestamp = futureDate.getTime();
+const expiration = futureDate.toISOString().split("T")[0];
+
+const spot = 600.0;
+
+// Sample 0DTE option chain for SPY around $600
+// Note: in production these come from your broker via FloeClient
+const makeOption = (
+  strike: number, type: "call" | "put",
+  bid: number, ask: number, oi: number, iv: number
+): NormalizedOption => ({
+  strike, optionType: type, bid, ask,
+  mark: (bid + ask) / 2, last: (bid + ask) / 2,
+  volume: Math.round(oi * 0.3), openInterest: oi,
+  impliedVolatility: iv, underlying: "SPY",
+  expiration, expirationTimestamp,
+  occSymbol: "", bidSize: 50, askSize: 50, timestamp: Date.now(),
+});
+
+// Construct realistic positioning:
+// - Heavy call OI at 605 (gamma wall above)
+// - Heavy put OI at 595 (gamma wall below)
+// - Moderate OI at nearby strikes
+// - Skewed IV (puts have higher IV than calls)
+const options: NormalizedOption[] = [
+  makeOption(590, "call", 10.20, 10.40, 8000,  0.22),
+  makeOption(590, "put",  0.15,  0.25,  12000, 0.28),
+  makeOption(593, "call", 7.30,  7.50,  10000, 0.21),
+  makeOption(593, "put",  0.35,  0.45,  15000, 0.26),
+  makeOption(595, "call", 5.40,  5.60,  15000, 0.20),
+  makeOption(595, "put",  0.55,  0.70,  35000, 0.25),
+  makeOption(597, "call", 3.60,  3.80,  12000, 0.19),
+  makeOption(597, "put",  0.90,  1.05,  18000, 0.23),
+  makeOption(598, "call", 2.80,  3.00,  14000, 0.185),
+  makeOption(598, "put",  1.10,  1.25,  16000, 0.22),
+  makeOption(600, "call", 1.50,  1.70,  25000, 0.18),
+  makeOption(600, "put",  1.50,  1.70,  25000, 0.21),
+  makeOption(602, "call", 0.70,  0.85,  18000, 0.175),
+  makeOption(602, "put",  2.60,  2.80,  14000, 0.20),
+  makeOption(603, "call", 0.45,  0.60,  16000, 0.17),
+  makeOption(603, "put",  3.30,  3.50,  12000, 0.195),
+  makeOption(605, "call", 0.20,  0.35,  40000, 0.165),
+  makeOption(605, "put",  5.10,  5.30,  15000, 0.19),
+  makeOption(607, "call", 0.05,  0.15,  10000, 0.16),
+  makeOption(607, "put",  7.00,  7.20,  8000,  0.185),
+  makeOption(610, "call", 0.01,  0.05,  5000,  0.155),
+  makeOption(610, "put",  9.90,  10.10, 6000,  0.18),
+];
+
+const chain: OptionChain = {
+  symbol: "SPY",
+  spot,
+  riskFreeRate: 0.05,
+  dividendYield: 0.015,
+  options,
+};
+
+// Build IV surfaces and exposures
+const ivSurfaces = getIVSurfaces("blackscholes", "totalvariance", chain);
+const exposures = calculateGammaVannaCharmExposures(chain, ivSurfaces);
+
+if (exposures.length === 0) {
+  console.log("No exposures computed (options may be expired)");
+} else {
+  const callSurface = ivSurfaces.find(s => s.putCall === "call");
+
+  // Run the full hedge flow analysis
+  const analysis = analyzeHedgeFlow(exposures[0], callSurface, {
+    rangePercent: 2,
+    stepPercent: 0.05,
+    kernelWidthStrikes: 2,
+  });
+
+  const { impulseCurve, charmIntegral, regimeParams } = analysis;
+
+  console.log("=== Market Regime ===");
+  console.log("Regime: " + regimeParams.regime);
+  console.log("ATM IV: " + (regimeParams.atmIV * 100).toFixed(1) + "%");
+  console.log("Spot-Vol Correlation: " + regimeParams.impliedSpotVolCorr.toFixed(3));
+
+  console.log("\\n=== Hedge Impulse Curve ===");
+  console.log("Spot-vol coupling k: " + impulseCurve.spotVolCoupling.toFixed(2));
+  console.log("Strike spacing: " + impulseCurve.strikeSpacing + " pts");
+  console.log("Kernel width: " + impulseCurve.kernelWidth.toFixed(1) + " pts");
+  console.log("Impulse at spot: " + impulseCurve.impulseAtSpot.toFixed(0));
+  console.log("Slope at spot: " + impulseCurve.slopeAtSpot.toFixed(0));
+  console.log("Impulse regime: " + impulseCurve.regime);
+  console.log("Directional bias: " + impulseCurve.asymmetry.bias);
+
+  if (impulseCurve.zeroCrossings.length > 0) {
+    console.log("\\nFlip levels (zero crossings):");
+    for (const zc of impulseCurve.zeroCrossings) {
+      console.log("  $" + zc.price.toFixed(1) + " (" + zc.direction + ")");
+    }
+  }
+
+  if (impulseCurve.extrema.length > 0) {
+    console.log("\\nKey levels:");
+    for (const ext of impulseCurve.extrema) {
+      const label = ext.type === "basin" ? "Attractor (wall)" : "Accelerator (vacuum)";
+      console.log("  $" + ext.price.toFixed(1) + ": " + label);
+    }
+  }
+
+  if (impulseCurve.nearestAttractorAbove) {
+    console.log("\\nNearest attractor above: $" + impulseCurve.nearestAttractorAbove.toFixed(1));
+  }
+  if (impulseCurve.nearestAttractorBelow) {
+    console.log("Nearest attractor below: $" + impulseCurve.nearestAttractorBelow.toFixed(1));
+  }
+
+  // Print a mini ASCII chart of the impulse curve
+  console.log("\\n=== Impulse Curve (ASCII) ===");
+  const step = Math.max(1, Math.floor(impulseCurve.curve.length / 25));
+  const maxAbs = Math.max(...impulseCurve.curve.map(p => Math.abs(p.impulse)));
+  for (let i = 0; i < impulseCurve.curve.length; i += step) {
+    const p = impulseCurve.curve[i];
+    const width = maxAbs > 0 ? Math.round((p.impulse / maxAbs) * 20) : 0;
+    const bar = width > 0 ? "+".repeat(width) : "-".repeat(-width);
+    const marker = Math.abs(p.price - spot) < 0.5 ? " <-- SPOT" : "";
+    console.log("$" + p.price.toFixed(0).padStart(4) + " |" + (width >= 0 ? " " + bar : bar) + marker);
+  }
+
+  console.log("\\n=== Charm Integral ===");
+  console.log("Minutes to expiry: " + charmIntegral.minutesRemaining.toFixed(0));
+  console.log("Total charm to close: " + charmIntegral.totalCharmToClose.toLocaleString());
+  console.log("Direction: " + charmIntegral.direction);
+
+  if (charmIntegral.strikeContributions.length > 0) {
+    console.log("\\nTop charm contributors:");
+    for (const sc of charmIntegral.strikeContributions.slice(0, 5)) {
+      console.log("  $" + sc.strike + ": " + (sc.fractionOfTotal * 100).toFixed(1) + "% of total");
+    }
+  }
+
+  if (charmIntegral.buckets.length > 0) {
+    console.log("\\nCharm accumulation curve:");
+    const bstep = Math.max(1, Math.floor(charmIntegral.buckets.length / 8));
+    for (let i = 0; i < charmIntegral.buckets.length; i += bstep) {
+      const b = charmIntegral.buckets[i];
+      console.log("  " + b.minutesRemaining.toFixed(0).padStart(4) + " min left: cumulative " + b.cumulativeCEX.toLocaleString());
+    }
+  }
+}
+`,
+  },
+  "volatility-analysis": {
+    title: "IV vs RV Analysis",
+    description: "Model-free implied volatility from option chains and tick-based realized volatility for variance risk premium monitoring",
+    code: `import {
+  computeVarianceSwapIV,
+  computeImpliedVolatility,
+  computeRealizedVolatility,
+  NormalizedOption,
+  PriceObservation,
+} from "@fullstackcraftllc/floe";
+
+// Helper: expiration 4 hours from now (simulating 0DTE)
+const hours = 4;
+const futureDate = new Date(Date.now() + hours * 60 * 60 * 1000);
+const expirationTimestamp = futureDate.getTime();
+const expiration = futureDate.toISOString().split("T")[0];
+
+const spot = 600.0;
+
+// Helper to build sample options
+const makeOpt = (
+  strike: number, type: "call" | "put",
+  bid: number, ask: number, oi: number
+): NormalizedOption => ({
+  strike, optionType: type, bid, ask,
+  mark: (bid + ask) / 2, last: (bid + ask) / 2,
+  volume: Math.round(oi * 0.2), openInterest: oi,
+  impliedVolatility: 0.18, underlying: "SPY",
+  expiration, expirationTimestamp,
+  occSymbol: "", bidSize: 50, askSize: 50, timestamp: Date.now(),
+});
+
+// 0DTE option chain (today's expiration)
+const todayOptions: NormalizedOption[] = [
+  makeOpt(585, "call", 15.10, 15.30, 5000),
+  makeOpt(585, "put",  0.05,  0.10,  8000),
+  makeOpt(590, "call", 10.10, 10.30, 8000),
+  makeOpt(590, "put",  0.10,  0.20,  12000),
+  makeOpt(593, "call", 7.20,  7.40,  10000),
+  makeOpt(593, "put",  0.25,  0.35,  14000),
+  makeOpt(595, "call", 5.30,  5.50,  15000),
+  makeOpt(595, "put",  0.40,  0.55,  20000),
+  makeOpt(597, "call", 3.50,  3.70,  12000),
+  makeOpt(597, "put",  0.70,  0.85,  16000),
+  makeOpt(598, "call", 2.70,  2.90,  14000),
+  makeOpt(598, "put",  0.95,  1.10,  14000),
+  makeOpt(600, "call", 1.40,  1.60,  25000),
+  makeOpt(600, "put",  1.40,  1.60,  25000),
+  makeOpt(602, "call", 0.60,  0.75,  18000),
+  makeOpt(602, "put",  2.50,  2.70,  14000),
+  makeOpt(603, "call", 0.35,  0.50,  16000),
+  makeOpt(603, "put",  3.20,  3.40,  12000),
+  makeOpt(605, "call", 0.15,  0.25,  22000),
+  makeOpt(605, "put",  5.00,  5.20,  10000),
+  makeOpt(607, "call", 0.05,  0.10,  10000),
+  makeOpt(607, "put",  6.90,  7.10,  8000),
+  makeOpt(610, "call", 0.01,  0.05,  5000),
+  makeOpt(610, "put",  9.80,  10.00, 5000),
+];
+
+// ==========================================
+// 1. Model-Free Implied Volatility (0DTE)
+// ==========================================
+console.log("=== 0DTE Model-Free Implied Volatility ===");
+
+const ivResult = computeVarianceSwapIV(todayOptions, spot, 0.05);
+
+console.log("Implied Vol: " + (ivResult.impliedVolatility * 100).toFixed(2) + "%");
+console.log("Forward Price: $" + ivResult.forward.toFixed(2));
+console.log("ATM Strike (K\u2080): $" + ivResult.k0);
+console.log("Time to Expiry: " + (ivResult.timeToExpiry * 365 * 24).toFixed(1) + " hours");
+console.log("Strikes Contributing: " + ivResult.numStrikes);
+console.log("Put Contribution: " + ivResult.putContribution.toFixed(6));
+console.log("Call Contribution: " + ivResult.callContribution.toFixed(6));
+
+// ==========================================
+// 2. Two-Term Interpolation (VIX-style)
+// ==========================================
+console.log("\n=== Two-Term Interpolation ===");
+
+// Simulate 1DTE options (tomorrow, slightly higher IV = normal term structure)
+const tomorrowExp = new Date(Date.now() + 28 * 60 * 60 * 1000);
+const tomorrowOptions: NormalizedOption[] = todayOptions.map(o => ({
+  ...o,
+  expirationTimestamp: tomorrowExp.getTime(),
+  expiration: tomorrowExp.toISOString().split("T")[0],
+  // Slightly wider prices (more time value)
+  bid: o.bid * 1.3,
+  ask: o.ask * 1.3,
+  mark: o.mark * 1.3,
+}));
+
+const interpolated = computeImpliedVolatility(
+  todayOptions,
+  spot,
+  0.05,
+  tomorrowOptions,
+  1  // target: 1-day constant maturity
+);
+
+console.log("Interpolated 1-Day IV: " + (interpolated.impliedVolatility * 100).toFixed(2) + "%");
+console.log("Near-term (0DTE) IV: " + (interpolated.nearTerm.impliedVolatility * 100).toFixed(2) + "%");
+console.log("Far-term (1DTE) IV: " + ((interpolated.farTerm?.impliedVolatility ?? 0) * 100).toFixed(2) + "%");
+console.log("Is interpolated: " + interpolated.isInterpolated);
+
+// Term structure signal
+const iv0dte = interpolated.nearTerm.impliedVolatility;
+const iv1dte = interpolated.farTerm?.impliedVolatility ?? 0;
+const termSpread = (iv0dte - iv1dte) * 100;
+
+console.log("\nTerm Structure:");
+if (termSpread > 2) {
+  console.log("BACKWARDATION: 0DTE IV >> 1DTE IV (+" + termSpread.toFixed(1) + " pts)");
+  console.log("=> Today is the event. Elevated intraday expectations.");
+} else if (termSpread < -2) {
+  console.log("CONTANGO: 1DTE IV >> 0DTE IV (" + termSpread.toFixed(1) + " pts)");
+  console.log("=> Quiet today, volatility expected tomorrow.");
+} else {
+  console.log("FLAT: 0DTE ~ 1DTE (spread: " + termSpread.toFixed(1) + " pts)");
+  console.log("=> Normal conditions, no unusual term structure.");
+}
+
+// ==========================================
+// 3. Tick-Based Realized Volatility
+// ==========================================
+console.log("\n=== Realized Volatility ===");
+
+// Simulate 2 hours of price ticks (1 per minute, 120 ticks)
+// with a random walk + slight upward drift
+const observations: PriceObservation[] = [];
+let price = spot;
+const startTime = Date.now() - 2 * 60 * 60 * 1000; // 2 hours ago
+
+for (let i = 0; i < 120; i++) {
+  price += (Math.random() - 0.48) * 0.5; // slight upward bias
+  observations.push({
+    price: Math.max(price, 580), // floor
+    timestamp: startTime + i * 60 * 1000,
+  });
+}
+
+const rv = computeRealizedVolatility(observations);
+
+console.log("Realized Vol: " + (rv.realizedVolatility * 100).toFixed(2) + "%");
+console.log("Observations: " + rv.numObservations);
+console.log("Returns Computed: " + rv.numReturns);
+console.log("Elapsed: " + rv.elapsedMinutes.toFixed(0) + " minutes");
+console.log("Quadratic Variation: " + rv.quadraticVariation.toFixed(8));
+
+// ==========================================
+// 4. Variance Risk Premium
+// ==========================================
+console.log("\n=== Intraday Variance Risk Premium ===");
+
+const vrp = (ivResult.impliedVolatility - rv.realizedVolatility) * 100;
+console.log("0DTE IV: " + (ivResult.impliedVolatility * 100).toFixed(2) + "%");
+console.log("Realized Vol: " + (rv.realizedVolatility * 100).toFixed(2) + "%");
+console.log("VRP: " + (vrp > 0 ? "+" : "") + vrp.toFixed(2) + " points");
+
+if (vrp > 3) {
+  console.log("=> Options are EXPENSIVE relative to realized movement.");
+  console.log("   Potential edge in selling premium.");
+} else if (vrp < -3) {
+  console.log("=> Options are CHEAP relative to realized movement.");
+  console.log("   Realized vol exceeding expectations.");
+} else {
+  console.log("=> Options are FAIRLY PRICED relative to current dynamics.");
+}
+`,
+  },
 };
 
 type ExampleKey = keyof typeof EXAMPLES;

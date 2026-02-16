@@ -3,6 +3,7 @@ import { TradierClient } from "./brokers/TradierClient";
 import { TastyTradeClient } from "./brokers/TastyTradeClient";
 import { TradeStationClient } from "./brokers/TradeStationClient";
 import { SchwabClient } from "./brokers/SchwabClient";
+import { IBKRClient } from "./brokers/IBKRClient";
 
 /**
  * Supported broker integrations for the FloeClient.
@@ -19,6 +20,8 @@ export enum Broker {
     TRADESTATION = "tradestation",
     /** Charles Schwab brokerage API (uses WebSocket streaming) */
     SCHWAB = "schwab",
+    /** Interactive Brokers Web API (OAuth) */
+    IBKR = "ibkr",
 }
 
 /**
@@ -96,6 +99,9 @@ export class FloeClient {
 
     /** Schwab broker client instance */
     private schwabClient: SchwabClient | null = null;
+
+    /** Interactive Brokers broker client instance */
+    private ibkrClient: IBKRClient | null = null;
 
     /** Event listeners registry for the EventEmitter pattern */
     private eventListeners: Map<FloeEventType, Set<FloeEventListener<any>>> = new Map();
@@ -261,6 +267,32 @@ export class FloeClient {
                 await this.schwabClient.connect();
                 break;
 
+            case Broker.IBKR:
+                // For IBKR, authToken is the OAuth access token
+                this.ibkrClient = new IBKRClient({
+                    baseUrl: 'https://api.ibkr.com/v1/api',
+                    accessToken: authToken,
+                    verbose: this.verbose,
+                });
+                
+                // Wire up IBKRClient events to FloeClient events
+                this.ibkrClient.on('tickerUpdate', (ticker: NormalizedTicker) => {
+                    this.emit('tickerUpdate', ticker);
+                });
+                this.ibkrClient.on('optionUpdate', (option: NormalizedOption) => {
+                    this.emit('optionUpdate', option);
+                });
+                this.ibkrClient.on('error', (error: Error) => {
+                    this.emit('error', error);
+                });
+                this.ibkrClient.on('disconnected', () => {
+                    this.emit('disconnected', { broker, reason: 'IBKR WebSocket disconnected' });
+                });
+
+                // Connect to the streaming API
+                await this.ibkrClient.connect();
+                break;
+
             default:
                 throw new Error(`Unsupported broker: ${broker}`);
         }
@@ -298,6 +330,11 @@ export class FloeClient {
         if (this.schwabClient) {
             this.schwabClient.disconnect();
             this.schwabClient = null;
+        }
+
+        if (this.ibkrClient) {
+            this.ibkrClient.disconnect();
+            this.ibkrClient = null;
         }
 
         const broker = this.currentBroker;
@@ -340,6 +377,9 @@ export class FloeClient {
                 break;
             case Broker.SCHWAB:
                 this.schwabClient?.subscribe(tickers);
+                break;
+            case Broker.IBKR:
+                this.ibkrClient?.subscribe(tickers);
                 break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
@@ -385,6 +425,9 @@ export class FloeClient {
             case Broker.SCHWAB:
                 this.schwabClient?.subscribe(symbols);
                 break;
+            case Broker.IBKR:
+                this.ibkrClient?.subscribe(symbols);
+                break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
         }
@@ -420,6 +463,9 @@ export class FloeClient {
                 break;
             case Broker.SCHWAB:
                 this.schwabClient?.unsubscribe(tickers);
+                break;
+            case Broker.IBKR:
+                this.ibkrClient?.unsubscribe(tickers);
                 break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
@@ -457,6 +503,9 @@ export class FloeClient {
             case Broker.SCHWAB:
                 this.schwabClient?.unsubscribe(symbols);
                 break;
+            case Broker.IBKR:
+                this.ibkrClient?.unsubscribe(symbols);
+                break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
         }
@@ -491,6 +540,9 @@ export class FloeClient {
                 break;
             case Broker.SCHWAB:
                 this.schwabClient?.unsubscribeFromAll();
+                break;
+            case Broker.IBKR:
+                this.ibkrClient?.unsubscribeFromAll();
                 break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
@@ -549,6 +601,9 @@ export class FloeClient {
             case Broker.SCHWAB:
                 await this.schwabClient?.fetchOpenInterest(symbolsToFetch);
                 break;
+            case Broker.IBKR:
+                await this.ibkrClient?.fetchOpenInterest(symbolsToFetch);
+                break;
             default:
                 throw new Error(`Unsupported broker: ${this.currentBroker}`);
         }
@@ -576,6 +631,8 @@ export class FloeClient {
                 return this.tradeStationClient?.getOption(occSymbol);
             case Broker.SCHWAB:
                 return this.schwabClient?.getOption(occSymbol);
+            case Broker.IBKR:
+                return this.ibkrClient?.getOption(occSymbol);
             default:
                 return undefined;
         }
@@ -604,6 +661,8 @@ export class FloeClient {
                 return this.tradeStationClient?.getAllOptions() ?? new Map();
             case Broker.SCHWAB:
                 return this.schwabClient?.getAllOptions() ?? new Map();
+            case Broker.IBKR:
+                return this.ibkrClient?.getAllOptions() ?? new Map();
             default:
                 return new Map();
         }
