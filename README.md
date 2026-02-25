@@ -43,7 +43,9 @@ Due to the overwhelming variety of how broker APIs structure their data (and how
 | Tastytrade (via WebSocket - DXLink Streamer)               |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
 | TradeStation (via HTTP Streaming)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
 | Schwab (via WebSocket)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
-| Interactive Brokers (via WebSocket)              |  Coming Soon            |  Coming Soon      |  Coming Soon                             |  Coming Soon                            |  Coming Soon                         | Coming Soon                   |
+| Interactive Brokers (via WebSocket)              |  Not currently planned*            |  Not currently planned*      |  Not currently planned*                             |  Not currently planned*                            |  Not currently planned*                         | Not currently planned*                   |
+
+*Due to the high capital requirements for an Interactive Brokers integration, no integration with them is currently planned.
 
 Ideally all aspects of `floe` will be available for all brokers, but this will take time to determine as we work through the various data structures and formats that each broker provides.
 
@@ -78,17 +80,9 @@ See [LICENSE.md](LICENSE.md) for full details.
 
 ## Contributing
 
-Contributions welcome! Please open an issue or PR.
+Contributions are welcome! Please open an issue or PR.
 
 By contributing, you agree that your contributions will be licensed under the same dual-license terms.
-
-## TODOs
-
-- [X] Implied PDF calculations
-- [X] Tradier integration
-- [X] TradeStation integration
-- [ ] Interactive Brokers integration
-- [ ] Trading functionality with all brokers
 
 ## Credits
 
