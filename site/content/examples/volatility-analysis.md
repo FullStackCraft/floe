@@ -95,8 +95,55 @@ if (spread > 0) {
 }
 ```
 
+## 5. Vol Response Z-Score (Is Vol Bid or Offered?)
+
+The raw IV-RV spread tells you *whether* IV exceeds RV, but not whether this is abnormal given the price path. The vol response model answers: "Is IV moving more than expected given what the underlying is doing?"
+
+```typescript
+import {
+  buildVolResponseObservation,
+  computeVolResponseZScore,
+  VolResponseObservation,
+} from "@fullstackcraftllc/floe";
+
+// Accumulate observations as the session progresses
+const observations: VolResponseObservation[] = [];
+let previous: { iv: number; spot: number } | null = null;
+
+function onTick(iv: number, rv: number, spot: number) {
+  if (previous) {
+    const obs = buildVolResponseObservation(
+      { iv, rv, spot, timestamp: Date.now() },
+      previous
+    );
+    observations.push(obs);
+
+    const result = computeVolResponseZScore(observations);
+
+    if (result.isValid) {
+      console.log(`Z-Score: ${result.zScore.toFixed(2)} (${result.signal})`);
+      console.log(`R²: ${result.rSquared.toFixed(3)}`);
+      console.log(`Expected ΔIV: ${(result.expectedDeltaIV * 10000).toFixed(1)} bps`);
+      console.log(`Observed ΔIV: ${(result.observedDeltaIV * 10000).toFixed(1)} bps`);
+    } else {
+      console.log(`Warming up: ${result.numObservations}/${result.minObservations}`);
+    }
+  }
+
+  previous = { iv, spot };
+}
+```
+
+**Signal interpretation:**
+- **z > 1.5 (vol_bid)**: IV is rising faster than the price action justifies — stress or demand for protection.
+- **z < -1.5 (vol_offered)**: IV is falling faster than expected — supply or vol crush.
+- **Near zero (neutral)**: Normal vol response given the return path.
+
+The model uses an expanding window from session open, so it requires ~30 ticks to warm up. After that, the z-score becomes increasingly reliable as the regression coefficients stabilize.
+
 ## Practical Notes
 
 - For 0DTE monitoring, recompute both IV and RV continuously as new quotes/ticks arrive.
 - RV naturally stabilizes as more observations accumulate throughout the session.
 - IV-RV is most useful as a **time series**, not a single point estimate.
+- The vol response z-score adds a third dimension: whether the IV movement is *expected* or *anomalous* given price action.

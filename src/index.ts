@@ -80,7 +80,7 @@ export type {
   PDFComparison,
 } from './impliedpdf';
 
-// Hedge flow analysis (impulse curve, charm integral, regime derivation)
+// Hedge flow analysis (impulse curve, charm integral, regime derivation, pressure cloud)
 export {
   // Regime derivation from IV surface
   deriveRegimeParams,
@@ -89,6 +89,8 @@ export {
   computeHedgeImpulseCurve,
   // Charm integral
   computeCharmIntegral,
+  // Pressure cloud (stability/acceleration zones)
+  computePressureCloud,
   // Combined analysis
   analyzeHedgeFlow,
 } from './hedgeflow';
@@ -110,6 +112,13 @@ export type {
   CharmIntegral,
   // Combined analysis
   HedgeFlowAnalysis,
+  // Pressure cloud types
+  HedgeContractEstimates,
+  PressureZone,
+  RegimeEdge,
+  PressureLevel,
+  PressureCloudConfig,
+  PressureCloud,
 } from './hedgeflow';
 
 // Client
@@ -148,3 +157,15 @@ export type {
   PriceObservation,
   RealizedVolatilityResult,
 } from './rv';
+
+// Vol response model (IV response residual / vol bid-offered z-score)
+export {
+  computeVolResponseZScore,
+  buildVolResponseObservation,
+} from './volresponse';
+export type {
+  VolResponseObservation,
+  VolResponseCoefficients,
+  VolResponseConfig,
+  VolResponseResult,
+} from './volresponse';

@@ -58,6 +58,7 @@ floe provides these main categories of functions:
 5. **Dealer Exposures** - Gamma, vanna, and charm exposure calculations
 6. **Implied PDF** - Risk-neutral probability density function from option prices
 7. **Real-Time Data** - Broker-agnostic streaming of normalized options data via `FloeClient`
+8. **Vol Response** - Expanding-window regression to classify whether IV is bid or offered relative to the price path via `computeVolResponseZScore()`
 
 All functions use structured parameter objects for clarity and full TypeScript type safety.
 

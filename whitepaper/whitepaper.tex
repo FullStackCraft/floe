@@ -653,6 +653,57 @@ In practice, we discretize into time buckets of width $\Delta t$ (default 15 min
 
 where $T_{\text{session}} = 390$ minutes (standard U.S. equity session). The sign of $\mathcal{C}$ indicates the direction of charm-driven pressure: positive implies net buying pressure (dealers must buy to offset delta decay), negative implies net selling pressure.
 
+\subsection{PressureField: Reachable Stability and Acceleration Zones}
+\label{subsec:pressure-field}
+
+The hedge impulse curve $H(S')$ is rich but can be difficult to consume directly in real-time. We therefore derive a compressed representation called the \emph{PressureField} (also referred to in implementation as a pressure cloud), which maps the curve into actionable zones and regime boundaries.
+
+\textbf{Reachability Weighting.} Not all levels are equally relevant intraday. A large impulse far from spot should carry less operational weight than a moderate impulse near spot. We define:
+
+\begin{align}
+R &= m \cdot \mathbb{E}[\Delta S_{\text{daily}}] \cdot S \\
+w_{\text{reach}}(S') &= \exp\!\left(-\left(\frac{|S' - S|}{R}\right)^2\right)
+\end{align}
+
+where $m$ is a configurable reachability multiple (default $m=2$). This Gaussian penalty suppresses distant levels while preserving local structure.
+
+\textbf{Signed Pressure Scores.} For each price level:
+
+\begin{align}
+\text{Stability}(S') &= \max(H(S'), 0) \cdot w_{\text{reach}}(S') \\
+\text{Acceleration}(S') &= \max(-H(S'), 0) \cdot w_{\text{reach}}(S')
+\end{align}
+
+Positive impulse contributes to mean-reversion (stability); negative impulse contributes to trend amplification (acceleration).
+
+\textbf{Zone Extraction.} We identify:
+\begin{itemize}
+    \item \textbf{Stability zones} from local positive extrema (basins): support below spot, resistance above spot.
+    \item \textbf{Acceleration zones} from local negative extrema (peaks/troughs): waterfall risk below spot, squeeze risk above spot.
+\end{itemize}
+
+Zone strength is normalized by the strongest impulse extremum and multiplied by reachability weight:
+\begin{align}
+\text{Strength}_i = \frac{|H_i|}{\max_j |H_j|} \cdot w_{\text{reach}}(S_i)
+\end{align}
+
+Zone bounds are obtained by scanning outward from each center until impulse magnitude decays below a fixed fraction of the local extremum (implementation default: 50\%).
+
+\textbf{Regime Edges.} Zero crossings from Section~\ref{subsec:kernel-smoothing} become explicit \emph{regime edges}: price levels where flow behavior flips between dampening and amplifying.
+
+\textbf{Contract-Level Hedge Estimates.} To translate pressure into executable scale, the per-level impulse is converted to contracts per one-point move:
+\begin{align}
+N_X(S') = \frac{H(S')}{M_X \cdot S \cdot 0.01}
+\end{align}
+where $M_X$ is the product multiplier (e.g., $M_{\text{NQ}}=20$, $M_{\text{MNQ}}=2$, $M_{\text{ES}}=50$, $M_{\text{MES}}=5$). This yields a signed estimate: positive implies dealer buying flow, negative implies dealer selling flow.
+
+\textbf{Trading Interpretation.} The PressureField converts abstract Greek interactions into a small set of operational cues:
+\begin{itemize}
+    \item Stability zones: reversal/bounce candidates.
+    \item Acceleration zones: continuation/breakout risk.
+    \item Regime edges: behavioral flip levels where market character changes.
+\end{itemize}
+
 \subsection{Real-Time Recalculation on Open Interest Changes}
 
 Both the impulse curve and charm integral are functions of the current exposure landscape, which depends on open interest. When live OI tracking (Section~\ref{sec:realtime-dealer-exposure-calculations}) detects a change---for instance, a large block of puts opening at a new strike---the exposures at that strike change, propagating through both analyses:
@@ -768,6 +819,40 @@ $\sigma_{\text{IV}}^{0\text{DTE}} \approx \sigma_{\text{IV}}^{1\text{DTE}}$ & No
 
 This term structure signal, combined with the variance risk premium, provides a two-dimensional view of the volatility landscape: whether today is special relative to tomorrow, and whether the market's pricing is accurate relative to reality.
 
+\subsection{Vol Response Residual Model}
+
+The raw IV-RV spread tells you \emph{whether} implied volatility exceeds realized, but not \emph{whether this is abnormal} given the current price path. The canonical microstructure relationship---spot down, vol up---means that much of intraday IV movement is a mechanical response to underlying returns. The real signal is whether volatility is bid or offered \emph{relative to what the price action warrants}.
+
+We formalize this with an expanding-window OLS regression:
+
+\begin{align}
+\Delta\text{IV}(t) = \alpha + \beta_1 \cdot r_t + \beta_2 \cdot |r_t| + \beta_3 \cdot \sigma_{\text{RV}} + \beta_4 \cdot \sigma_{\text{IV}} + \varepsilon_t
+\end{align}
+
+where $r_t = \ln(S_t / S_{t-1})$ is the log return of the underlying, $|r_t|$ captures the convexity (vol-of-vol) response, $\sigma_{\text{RV}}$ is the current realized volatility level, and $\sigma_{\text{IV}}$ is the current implied volatility level. The coefficients are estimated via ordinary least squares with a small ridge penalty ($\lambda = 10^{-8}$) on non-intercept terms for numerical stability of the normal equations.
+
+The residual of the most recent observation is normalized by the residual standard deviation to produce a z-score:
+
+\begin{align}
+z_t = \frac{\varepsilon_t}{\hat{\sigma}_\varepsilon} = \frac{\Delta\text{IV}(t) - \widehat{\Delta\text{IV}}(t)}{\hat{\sigma}_\varepsilon}
+\end{align}
+
+The z-score admits a natural classification:
+
+\begin{center}
+\begin{tabular}{l|l|l}
+\textbf{Condition} & \textbf{Signal} & \textbf{Interpretation} \\
+\hline
+$z > 1.5$ & Vol Bid & IV rising faster than price action justifies (stress/demand) \\
+$z < -1.5$ & Vol Offered & IV falling faster than expected (supply/crush) \\
+$|z| \leq 1.5$ & Neutral & Normal vol response given the return path \\
+\end{tabular}
+\end{center}
+
+The regression uses an expanding window from session open: all observations accumulated so far are included in each fit. With few observations early in the session, the model returns an \texttt{insufficient\_data} signal until a configurable minimum (default 30) is reached. As the session progresses, the coefficients stabilize and the z-score becomes increasingly reliable.
+
+This approach is particularly suited to 0DTE monitoring, where there is no meaningful historical seasonal baseline---each session's vol dynamics are learned in real time from the session itself. The $R^2$ of the regression provides a goodness-of-fit check: high $R^2$ means the price path explains most IV movement and residuals carry strong signal; low $R^2$ suggests structural breaks or unusual dynamics.
+
 \section{Shares Needed to Cover}
 
 As a sort of global heuristic across all exposures at all strikes for a given expiration, one can estimate the total hedging flow required to neutralize dealer exposure:
@@ -807,7 +892,9 @@ The complete pipeline for real-time dealer exposure calculation:
     \item \textbf{Stream Updates}: On each new quote, recalculate IV $\rightarrow$ Greeks $\rightarrow$ Exposures
     \item \textbf{Track Live OI}: Adjust open interest based on observed trades
     \item \textbf{Analyze Hedge Flow}: Compute impulse curve and charm integral from updated exposures
+    \item \textbf{Compute PressureField}: Extract stability/acceleration zones, regime edges, and contract-scale hedge estimates
     \item \textbf{Compute IV/RV}: Model-free implied volatility from option chains and tick-based realized volatility for variance risk premium monitoring
+    \item \textbf{Vol Response}: Fit expanding-window regression on IV changes, compute z-score to classify vol as bid, offered, or neutral relative to the price path
 \end{enumerate}
 
 This methodology enables sub-second exposure updates, providing actionable insight into market-maker hedging dynamics as market conditions evolve.

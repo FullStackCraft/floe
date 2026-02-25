@@ -1090,3 +1090,114 @@ interface RealizedVolatilityResult {
   lastObservation: number;
 }
 ```
+
+---
+
+## Vol Response Model
+
+### `buildVolResponseObservation(current, previous)`
+
+Build a single observation for the vol response regression from consecutive IV/RV/spot readings.
+
+```typescript
+import { buildVolResponseObservation } from "@fullstackcraftllc/floe";
+
+const observation = buildVolResponseObservation(
+  { iv: 0.22, rv: 0.18, spot: 600.50, timestamp: Date.now() },
+  { iv: 0.215, spot: 600.00 }
+);
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `current` | `{ iv: number; rv: number; spot: number; timestamp: number }` | Current tick values (IV and RV as annualized decimals) |
+| `previous` | `{ iv: number; spot: number }` | Previous tick values |
+
+**Returns:** `VolResponseObservation`
+
+### `computeVolResponseZScore(observations, config?)`
+
+Fit an expanding-window OLS regression on accumulated observations and compute a z-score classifying whether IV is bid or offered relative to the price path.
+
+Regression model: `ΔIV(t) ~ α + β₁·return + β₂·|return| + β₃·RV + β₄·IV_level`
+
+```typescript
+import { computeVolResponseZScore } from "@fullstackcraftllc/floe";
+
+const result = computeVolResponseZScore(observations, {
+  minObservations: 30,
+  volBidThreshold: 1.5,
+  volOfferedThreshold: -1.5,
+});
+
+if (result.isValid) {
+  console.log("Z-Score:", result.zScore.toFixed(2));
+  console.log("Signal:", result.signal);  // 'vol_bid' | 'vol_offered' | 'neutral'
+  console.log("R²:", result.rSquared.toFixed(3));
+}
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `observations` | `VolResponseObservation[]` | All accumulated observations for the session |
+| `config` | `VolResponseConfig` | Optional configuration overrides |
+
+**Returns:** `VolResponseResult`
+
+### VolResponseObservation
+
+```typescript
+interface VolResponseObservation {
+  timestamp: number;        // milliseconds
+  deltaIV: number;          // IV(t) - IV(t-1), as decimal
+  spotReturn: number;       // ln(S(t) / S(t-1))
+  absSpotReturn: number;    // |spotReturn|
+  rvLevel: number;          // current RV, annualized decimal
+  ivLevel: number;          // current IV, annualized decimal
+}
+```
+
+### VolResponseCoefficients
+
+```typescript
+interface VolResponseCoefficients {
+  intercept: number;       // regression intercept
+  betaReturn: number;      // signed spot return (spot-vol correlation)
+  betaAbsReturn: number;   // |return| (vol-of-vol / convexity response)
+  betaRV: number;          // RV level (RV mean-reversion effect)
+  betaIVLevel: number;     // IV level (IV mean-reversion effect)
+}
+```
+
+### VolResponseConfig
+
+```typescript
+interface VolResponseConfig {
+  minObservations?: number;      // default: 30
+  volBidThreshold?: number;      // default: 1.5
+  volOfferedThreshold?: number;  // default: -1.5
+}
+```
+
+### VolResponseResult
+
+```typescript
+interface VolResponseResult {
+  isValid: boolean;
+  minObservations: number;
+  numObservations: number;
+  coefficients: VolResponseCoefficients;
+  rSquared: number;
+  residualStdDev: number;
+  expectedDeltaIV: number;
+  observedDeltaIV: number;
+  residual: number;
+  zScore: number;
+  signal: 'vol_bid' | 'vol_offered' | 'neutral' | 'insufficient_data';
+  timestamp: number;
+}
+```
