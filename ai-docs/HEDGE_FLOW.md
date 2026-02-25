@@ -46,9 +46,11 @@ The impulse curve (conditional: "what if price moves?") and charm integral (unco
 
 ## Exports from `src/index.ts`
 
-Functions: `deriveRegimeParams`, `interpolateIVAtStrike`, `computeHedgeImpulseCurve`, `computeCharmIntegral`, `analyzeHedgeFlow`
+Functions: `deriveRegimeParams`, `interpolateIVAtStrike`, `computeHedgeImpulseCurve`, `computeCharmIntegral`, `computePressureCloud`, `analyzeHedgeFlow`
 
-Types: `MarketRegime`, `RegimeParams`, `HedgeImpulseConfig`, `HedgeImpulsePoint`, `HedgeImpulseCurve`, `ZeroCrossing`, `ImpulseExtremum`, `DirectionalAsymmetry`, `ImpulseRegime`, `CharmIntegralConfig`, `CharmBucket`, `CharmIntegral`, `HedgeFlowAnalysis`
+Types: `MarketRegime`, `RegimeParams`, `HedgeImpulseConfig`, `HedgeImpulsePoint`, `HedgeImpulseCurve`, `ZeroCrossing`, `ImpulseExtremum`, `DirectionalAsymmetry`, `ImpulseRegime`, `CharmIntegralConfig`, `CharmBucket`, `CharmIntegral`, `HedgeFlowAnalysis`, `HedgeContractEstimates`, `PressureZone`, `RegimeEdge`, `PressureLevel`, `PressureCloudConfig`, `PressureCloud`
+
+See also: `ai-docs/PRESSURE_CLOUD.md` for the pressure cloud module documentation.
 
 ## Whitepaper
 

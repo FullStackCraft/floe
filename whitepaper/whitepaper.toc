@@ -41,17 +41,18 @@
 \contentsline {subsubsection}{\numberline {8.6.3}Directional Asymmetry}{20}{subsubsection.8.6.3}%
 \contentsline {subsubsection}{\numberline {8.6.4}Regime Classification}{21}{subsubsection.8.6.4}%
 \contentsline {subsection}{\numberline {8.7}Charm Integral: Unconditional Time Pressure}{21}{subsection.8.7}%
-\contentsline {subsection}{\numberline {8.8}Real-Time Recalculation on Open Interest Changes}{22}{subsection.8.8}%
-\contentsline {section}{\numberline {9}Model-Free Implied Volatility and Realized Volatility}{22}{section.9}%
-\contentsline {subsection}{\numberline {9.1}Model-Free Implied Volatility}{22}{subsection.9.1}%
-\contentsline {subsubsection}{\numberline {9.1.1}Strike Spacing}{23}{subsubsection.9.1.1}%
-\contentsline {subsubsection}{\numberline {9.1.2}Single-Expiration Mode}{23}{subsubsection.9.1.2}%
-\contentsline {subsubsection}{\numberline {9.1.3}Two-Term Interpolation}{24}{subsubsection.9.1.3}%
-\contentsline {subsection}{\numberline {9.2}Tick-Based Realized Volatility}{24}{subsection.9.2}%
-\contentsline {subsubsection}{\numberline {9.2.1}Design: Tick-Level, Not Windowed}{25}{subsubsection.9.2.1}%
-\contentsline {subsection}{\numberline {9.3}The Intraday Variance Risk Premium}{25}{subsection.9.3}%
-\contentsline {subsection}{\numberline {9.4}Term Structure Signals}{25}{subsection.9.4}%
-\contentsline {section}{\numberline {10}Shares Needed to Cover}{26}{section.10}%
-\contentsline {section}{\numberline {11}Future Work}{26}{section.11}%
-\contentsline {section}{\numberline {12}Summary}{27}{section.12}%
-\contentsline {section}{\numberline {A}Repository}{28}{appendix.A}%
+\contentsline {subsection}{\numberline {8.8}PressureField: Reachable Stability and Acceleration Zones}{22}{subsection.8.8}%
+\contentsline {subsection}{\numberline {8.9}Real-Time Recalculation on Open Interest Changes}{23}{subsection.8.9}%
+\contentsline {section}{\numberline {9}Model-Free Implied Volatility and Realized Volatility}{24}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Model-Free Implied Volatility}{24}{subsection.9.1}%
+\contentsline {subsubsection}{\numberline {9.1.1}Strike Spacing}{25}{subsubsection.9.1.1}%
+\contentsline {subsubsection}{\numberline {9.1.2}Single-Expiration Mode}{25}{subsubsection.9.1.2}%
+\contentsline {subsubsection}{\numberline {9.1.3}Two-Term Interpolation}{25}{subsubsection.9.1.3}%
+\contentsline {subsection}{\numberline {9.2}Tick-Based Realized Volatility}{26}{subsection.9.2}%
+\contentsline {subsubsection}{\numberline {9.2.1}Design: Tick-Level, Not Windowed}{26}{subsubsection.9.2.1}%
+\contentsline {subsection}{\numberline {9.3}The Intraday Variance Risk Premium}{26}{subsection.9.3}%
+\contentsline {subsection}{\numberline {9.4}Term Structure Signals}{27}{subsection.9.4}%
+\contentsline {section}{\numberline {10}Shares Needed to Cover}{27}{section.10}%
+\contentsline {section}{\numberline {11}Future Work}{28}{section.11}%
+\contentsline {section}{\numberline {12}Summary}{28}{section.12}%
+\contentsline {section}{\numberline {A}Repository}{30}{appendix.A}%

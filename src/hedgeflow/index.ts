@@ -25,12 +25,25 @@ export type {
   HedgeFlowAnalysis,
 } from './types';
 
+// Re-export pressure cloud types
+export type {
+  HedgeContractEstimates,
+  PressureZone,
+  RegimeEdge,
+  PressureLevel,
+  PressureCloudConfig,
+  PressureCloud,
+} from './pressurecloud';
+
 // Re-export regime functions
 export { deriveRegimeParams, interpolateIVAtStrike } from './regime';
 
 // Re-export computation functions
 export { computeHedgeImpulseCurve } from './curve';
 export { computeCharmIntegral } from './charm';
+
+// Re-export pressure cloud
+export { computePressureCloud } from './pressurecloud';
 
 /**
  * Compute a complete hedge flow analysis for a single expiration.
