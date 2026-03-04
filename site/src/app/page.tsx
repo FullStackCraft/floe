@@ -14,11 +14,11 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4 pb-8 md:pb-4">
-      {/* Main Content Wrapper - grows to push footer down */}
-      <div className="flex-1 flex flex-col items-center justify-center w-full">
+    <main className="min-h-screen overflow-y-auto flex flex-col items-center px-4 pt-14 md:pt-24 lg:pt-28 pb-8 md:pb-10">
+      {/* Main Content Wrapper */}
+      <div className="flex flex-col items-center w-full">
         {/* Hero Section */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-20 md:mb-24">
           <h1 className="font-mono text-7xl md:text-8xl lg:text-9xl font-bold tracking-tight mb-6 text-[#CB3837]">
             floe
           </h1>
@@ -77,7 +77,7 @@ export default function Home() {
         </div>
 
         {/* Quick Install */}
-        <div className="mt-16 mb-8 md:mb-16 text-center">
+        <div className="mt-16 md:mt-20 mb-28 md:mb-40 lg:mb-48 text-center">
           <p className="text-sm text-gray-500 mb-3">{copied ? "Copied!" : "Quick install"}</p>
           <button
             onClick={handleCopy}
@@ -88,8 +88,8 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Footer - uses mt-auto to stick to bottom */}
-      <footer className="mt-auto pt-8 pb-4 text-sm text-gray-400 flex flex-col items-center gap-2">
+      {/* Footer */}
+      <footer className="pt-2 pb-4 text-sm text-gray-400 flex flex-col items-center gap-2">
         <div>
           <a 
             href="https://github.com/FullStackCraft/floe" 
@@ -116,6 +116,14 @@ export default function Home() {
             className="hover:text-black transition-colors"
           >
             Full Stack Craft
+          </a>
+        </div>
+        <div className="text-xs mt-1">
+          <a
+            href="https://fullstackcraft.github.io/floego/"
+            className="hover:text-black transition-colors"
+          >
+            Looking for the go version?
           </a>
         </div>
         <div className="text-xs mt-1">© {new Date().getFullYear()} Full Stack Craft LLC</div>
