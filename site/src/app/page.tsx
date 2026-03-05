@@ -120,7 +120,7 @@ export default function Home() {
         </div>
         <div className="text-xs mt-1">
           <a
-            href="https://fullstackcraft.github.io/floego/"
+            href="https://fullstackcraft.github.io/floe-go/"
             className="hover:text-black transition-colors"
           >
             Looking for the go version?
