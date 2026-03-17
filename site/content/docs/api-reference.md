@@ -296,6 +296,63 @@ const p10 = getQuantile(distribution, 0.10);  // 10th percentile
 const p90 = getQuantile(distribution, 0.90);  // 90th percentile
 ```
 
+## Dataset API Clients
+
+### NewApiClient
+
+Use the unified API client to query hindsight, dealer surface, and AMT datasets:
+
+```typescript
+import { NewApiClient } from "@fullstackcraftllc/floe";
+
+const client = NewApiClient(process.env.FLOE_DATA_API_KEY!);
+```
+
+### GetHindsightData
+
+```typescript
+const events = await client.GetHindsightData(undefined, {
+  start_date: "2026-03-01",
+  end_date: "2026-03-16",
+  country: "US",
+  min_volatility: 2,
+  event: "CPI",
+});
+```
+
+### GetHindsightSample
+
+```typescript
+const sample = await client.GetHindsightSample(undefined);
+```
+
+### GetDealerMinuteSurfaces
+
+```typescript
+const rows = await client.GetDealerMinuteSurfaces(undefined, {
+  symbol: "SPY",
+  trade_date: "2026-03-10",
+});
+```
+
+### GetAMTSessionStats
+
+```typescript
+const rows = await client.GetAMTSessionStats(undefined, {
+  symbol: "NQ",
+  session_id: "2026-03-10",
+});
+```
+
+### GetAMTEvents
+
+```typescript
+const rows = await client.GetAMTEvents(undefined, {
+  symbol: "NQ",
+  session_id: "2026-03-10",
+});
+```
+
 ## Exposure-Adjusted Implied PDF
 
 ### estimateExposureAdjustedPDF

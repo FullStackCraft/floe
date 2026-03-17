@@ -169,3 +169,24 @@ export type {
   VolResponseConfig,
   VolResponseResult,
 } from './volresponse';
+
+// Dataset API clients (Hindsight + Dealer minute surfaces + AMT)
+export {
+  ApiClient,
+  NewApiClient,
+  APIError,
+} from './apiclient';
+export type {
+  FetchLike,
+  ApiContext,
+  CtxEquivalent,
+  HindsightDataRequest,
+  DealerMinuteSurfacesRequest,
+  AMTRequest,
+  HindsightEvent,
+  DealerMinuteSurface,
+  AMTSessionStatsRow,
+  AMTEventsRow,
+  MinuteSurface,
+  SurfacePoint,
+} from './apiclient';
