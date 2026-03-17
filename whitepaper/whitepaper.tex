@@ -26,7 +26,7 @@
 \usepackage[hidelinks]{hyperref}
 
 \title{Introducing \texttt{floe}: Static and Real-time Calculation of Options Pricing, Flows, and Dealer Gamma, Vanna, and Charm Exposures via Broker Data}
-\author{Full Stack Craft LLC}
+\author{\href{https://fullstackcraft.com}{Full Stack Craft LLC}}
 \date{\today}
 
 \begin{document}
@@ -44,11 +44,11 @@
 
 \section{Motivation}
 
-In recent years, the interest and involvement of retail traders in global markets has surged, including the use of more complex instruments such as options and futures. For the most part, many brokerages have embraced this secular trend by offering their customers a way to stream real-time data directly on their personal computers. However, the standard interface between each brokerage varies widely, and retail traders are left with challenging documentation and inconsistent APIs to work with. We attempt to alleviate this problem by introducing a zero-dependency analytics library that can compute a variety of both static and real-time options pricing and flow data, including dealer gamma, vanna, and charm exposures from streaming broker data, with both TypeScript and Go implementations.
+In recent years, the interest and involvement of retail traders in global markets has surged, including the use of more complex instruments such as options and futures. For the most part, many brokerages have embraced this secular trend by offering their customers a way to stream real-time data directly on their personal computers. However, the standard interface between each brokerage varies widely, and retail traders are left with challenging documentation and inconsistent APIs to work with. We attempt to alleviate this problem by introducing a zero-dependency analytics library that can compute a variety of both static and real-time options pricing and flow data, including dealer gamma, vanna, and charm exposures from streaming broker data, with TypeScript, Go, and Python implementations.
 
 \section{Introducing \texttt{floe}}
 
-We introduce \texttt{floe}: a zero-dependency TypeScript library for computing real-time options flow data, including dealer gamma, vanna, and charm exposures that can be derived purely from real-time streamed broker data alone. We also provide \texttt{floe-go}, a companion Go port for backend and server-side analytics workflows.
+We introduce \texttt{floe}: a zero-dependency TypeScript library for computing real-time options flow data, including dealer gamma, vanna, and charm exposures that can be derived purely from real-time streamed broker data alone. We also provide \texttt{floe-go} and \texttt{floe-py}, companion Go and Python ports for backend and server-side analytics workflows.
 
 The mathematical foundation of \texttt{floe} rests upon the seminal work of Black and Scholes \cite{black1973pricing} and Merton \cite{merton1973theory}, whose option pricing framework enables the computation of the Greeks used throughout this paper.
 
