@@ -1,6 +1,6 @@
 ---
 title: Dataset API Clients
-description: Query hindsight, dealer minute surfaces, and AMT datasets with the unified ApiClient.
+description: Query hindsight, dealer minute surfaces, AMT, and options screener datasets with the unified ApiClient.
 order: 7
 ---
 
@@ -70,4 +70,53 @@ const eventRows = await client.GetAMTEvents(undefined, {
 
 console.log(`amt event rows: ${eventRows.length}`);
 console.log(eventRows[0]?.events?.[0]?.event_messages);
+```
+
+## Fetch Wheel Screener data
+
+```typescript
+const wheelData = await client.GetWheelScreenerData(undefined, {
+  strategy: "CC",
+  page_size: 10,
+  order_by: "score",
+  order_direction: "desc",
+  extra_params: {
+    min_score: "70",
+    sector: "Technology",
+  },
+});
+
+console.log(`wheel screener rows: ${wheelData.data.length}`);
+console.log(`total: ${wheelData.total}, page: ${wheelData.page}`);
+console.log(wheelData.data[0]?.ticker, wheelData.data[0]?.score);
+```
+
+## Fetch LEAPS Screener data
+
+```typescript
+const leapsData = await client.GetLeapsScreenerData(undefined, {
+  strategy: "LC",
+  extra_params: {
+    min_dte: "180",
+    max_delta: "0.7",
+  },
+});
+
+console.log(`leaps screener rows: ${leapsData.data.length}`);
+console.log(leapsData.data[0]?.ticker, leapsData.data[0]?.strategy);
+```
+
+## Fetch Option Screener data
+
+```typescript
+const optionData = await client.GetOptionScreenerData(undefined, {
+  strategy: "CDS",
+  search: "AAPL",
+  page: 1,
+  page_size: 25,
+});
+
+console.log(`option screener rows: ${optionData.data.length}`);
+console.log(`total: ${optionData.total}`);
+console.log(optionData.data[0]?.ticker, optionData.data[0]?.max_profit);
 ```

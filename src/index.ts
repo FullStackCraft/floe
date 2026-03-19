@@ -170,7 +170,7 @@ export type {
   VolResponseResult,
 } from './volresponse';
 
-// Dataset API clients (Hindsight + Dealer minute surfaces + AMT)
+// Dataset API clients (Hindsight + Dealer minute surfaces + AMT + Options Screeners)
 export {
   ApiClient,
   NewApiClient,
@@ -189,4 +189,6 @@ export type {
   AMTEventsRow,
   MinuteSurface,
   SurfacePoint,
+  OptionsScreenerRequest,
+  OptionsScreenerResponse,
 } from './apiclient';

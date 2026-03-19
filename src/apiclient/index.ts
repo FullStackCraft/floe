@@ -1,6 +1,9 @@
 const DEFAULT_HINDSIGHT_BASE_URL = 'https://hindsightapi.com/api';
 const DEFAULT_DEALER_BASE_URL = 'https://vannacharm.com/api';
 const DEFAULT_AMT_BASE_URL = 'https://amtjoy.com/api';
+const DEFAULT_WHEELSCREENER_BASE_URL = 'https://wheelscreener.com/api';
+const DEFAULT_LEAPSSCREENER_BASE_URL = 'https://leapsscreener.com/api';
+const DEFAULT_OPTIONSCREENER_BASE_URL = 'https://option-screener.com/api';
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -85,6 +88,24 @@ export interface AMTEventsRow {
   events: Array<Record<string, unknown>>;
 }
 
+export interface OptionsScreenerRequest {
+  strategy: string;
+  search?: string;
+  page?: number;
+  page_size?: number;
+  order_by?: string;
+  order_direction?: string;
+  /** Additional query params for range filters (min_score, max_score, etc.) and multi-value filters (sector, exclude_industry, etc.). */
+  extra_params?: Record<string, string>;
+}
+
+export interface OptionsScreenerResponse {
+  data: Record<string, unknown>[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 const STATUS_TEXT: Record<number, string> = {
   200: 'OK',
   400: 'Bad Request',
@@ -139,6 +160,9 @@ export class ApiClient {
   private readonly hindsightBaseURL: string;
   private readonly dealerBaseURL: string;
   private readonly amtBaseURL: string;
+  private readonly wheelScreenerBaseURL: string;
+  private readonly leapsScreenerBaseURL: string;
+  private readonly optionScreenerBaseURL: string;
 
   constructor(apiKey: string, httpClient?: FetchLike) {
     this.apiKey = apiKey.trim();
@@ -157,6 +181,9 @@ export class ApiClient {
     this.hindsightBaseURL = DEFAULT_HINDSIGHT_BASE_URL;
     this.dealerBaseURL = DEFAULT_DEALER_BASE_URL;
     this.amtBaseURL = DEFAULT_AMT_BASE_URL;
+    this.wheelScreenerBaseURL = DEFAULT_WHEELSCREENER_BASE_URL;
+    this.leapsScreenerBaseURL = DEFAULT_LEAPSSCREENER_BASE_URL;
+    this.optionScreenerBaseURL = DEFAULT_OPTIONSCREENER_BASE_URL;
   }
 
   async GetHindsightData(ctx: CtxEquivalent, req: HindsightDataRequest): Promise<HindsightEvent[]> {
@@ -219,6 +246,66 @@ export class ApiClient {
 
     const body = await this.getRaw(ctx, this.amtBaseURL, '/getAMTEvents', query, true);
     return decodeAMTEvents(body);
+  }
+
+  async GetWheelScreenerData(
+    ctx: CtxEquivalent,
+    req: OptionsScreenerRequest,
+  ): Promise<OptionsScreenerResponse> {
+    return this.getOptionsScreenerData(ctx, this.wheelScreenerBaseURL, '/get-options', req);
+  }
+
+  async GetLeapsScreenerData(
+    ctx: CtxEquivalent,
+    req: OptionsScreenerRequest,
+  ): Promise<OptionsScreenerResponse> {
+    return this.getOptionsScreenerData(ctx, this.leapsScreenerBaseURL, '/get-options', req);
+  }
+
+  async GetOptionScreenerData(
+    ctx: CtxEquivalent,
+    req: OptionsScreenerRequest,
+  ): Promise<OptionsScreenerResponse> {
+    return this.getOptionsScreenerData(ctx, this.optionScreenerBaseURL, '/getOptionsData', req);
+  }
+
+  private async getOptionsScreenerData(
+    ctx: CtxEquivalent,
+    baseURL: string,
+    path: string,
+    req: OptionsScreenerRequest,
+  ): Promise<OptionsScreenerResponse> {
+    validateOptionsScreenerRequest(req);
+
+    const query = new URLSearchParams();
+    query.set('strategy', req.strategy.trim().toUpperCase());
+
+    if (typeof req.search === 'string' && req.search.trim() !== '') {
+      query.set('search', req.search.trim());
+    }
+    if (typeof req.page === 'number' && req.page > 0) {
+      query.set('page', String(req.page));
+    }
+    if (typeof req.page_size === 'number' && req.page_size > 0) {
+      query.set('page_size', String(req.page_size));
+    }
+    if (typeof req.order_by === 'string' && req.order_by.trim() !== '') {
+      query.set('order_by', req.order_by.trim());
+    }
+    if (typeof req.order_direction === 'string' && req.order_direction.trim() !== '') {
+      query.set('order_direction', req.order_direction.trim());
+    }
+
+    if (req.extra_params !== undefined && req.extra_params !== null) {
+      for (const [key, value] of Object.entries(req.extra_params)) {
+        if (typeof value === 'string' && value.trim() !== '') {
+          query.set(key, value.trim());
+        }
+      }
+    }
+
+    const body = await this.getRaw(ctx, baseURL, path, query, true);
+    return decodeOptionsScreenerResponse(body);
   }
 
   private async getRaw(
@@ -561,6 +648,65 @@ function decodeAMTEvents(body: string): AMTEventsRow[] {
   }
 
   throw new Error('failed to decode amt events response');
+}
+
+function validateOptionsScreenerRequest(req: OptionsScreenerRequest): void {
+  const strategy = (req.strategy ?? '').trim();
+  if (strategy === '') {
+    throw new Error('strategy is required');
+  }
+}
+
+function decodeOptionsScreenerResponse(body: string): OptionsScreenerResponse {
+  const parsed = parseJSON(body);
+
+  const envelope = asRecord(parsed);
+  if (envelope !== null) {
+    const hasEnvelope =
+      envelope.success === true ||
+      Array.isArray(envelope.data) ||
+      nonEmptyString(envelope.error) ||
+      nonEmptyString(envelope.message) ||
+      nonEmptyString(envelope.subscriptionEnd) ||
+      nonEmptyString(envelope.subscription_end);
+
+    if (hasEnvelope) {
+      if (envelope.success !== true) {
+        throw new APIError({
+          StatusCode: 200,
+          Message: firstNonEmpty(
+            getStringOrEmpty(envelope.error),
+            getStringOrEmpty(envelope.message),
+            'request failed',
+          ),
+          SubscriptionEnd: firstNonEmpty(
+            getStringOrEmpty(envelope.subscriptionEnd),
+            getStringOrEmpty(envelope.subscription_end),
+          ),
+          RawBody: body,
+        });
+      }
+
+      const rows = Array.isArray(envelope.data) ? envelope.data : [];
+      return {
+        data: rows.map((item) => asRecord(item) ?? {}),
+        total: toInteger(envelope.total),
+        page: toInteger(envelope.page),
+        page_size: toInteger(envelope.page_size),
+      };
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return {
+      data: parsed.map((item) => asRecord(item) ?? {}),
+      total: parsed.length,
+      page: 1,
+      page_size: parsed.length,
+    };
+  }
+
+  throw new Error('failed to decode options screener response');
 }
 
 function normalizeHindsightEvent(value: unknown): HindsightEvent {
