@@ -40,7 +40,7 @@ Due to the overwhelming variety of how broker APIs structure their data (and how
 | Broker                | Black-Scholes | Greeks | Open Interest Based Exposures | Options-Book Based Exposures | Implied PDF Calculations | SPX / NDX 0DTE Data |
 |-----------------------|--------------|--------|-------------------------------|------------------------------|-------------------------|----------------------|
 | Tradier (via WebSocket) | ✅           | ✅     | ✅                            | ✅                           |  ✅                         | ✅                   |
-| Tastytrade (via WebSocket - DXLink Streamer)               |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | ✅ (SPX/SPXW verified)            |
+| Tastytrade (via WebSocket - DXLink Streamer)               |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | ✅            |
 | TradeStation (via HTTP Streaming)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
 | Webull (via HTTP Snapshots)              |  ✅            |  ✅      |  ✅                             |  Not supported                 |  ✅                         | Not supported                   |
 | Schwab (via WebSocket)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
