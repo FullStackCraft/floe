@@ -4,6 +4,7 @@ import { TastyTradeClient } from "./brokers/TastyTradeClient";
 import { TradeStationClient } from "./brokers/TradeStationClient";
 import { SchwabClient } from "./brokers/SchwabClient";
 import { IBKRClient } from "./brokers/IBKRClient";
+import { WebullClient } from "./brokers/WebullClient";
 
 /**
  * Supported broker integrations for the FloeClient.
@@ -18,6 +19,8 @@ export enum Broker {
     TASTYTRADE = "tastytrade",
     /** TradeStation brokerage API (uses HTTP streaming) */
     TRADESTATION = "tradestation",
+    /** Webull brokerage API (uses proxied HTTP snapshots) */
+    WEBULL = "webull",
     /** Charles Schwab brokerage API (uses WebSocket streaming) */
     SCHWAB = "schwab",
     /** Interactive Brokers Web API (OAuth) */
@@ -102,6 +105,9 @@ export class FloeClient {
 
     /** Interactive Brokers broker client instance */
     private ibkrClient: IBKRClient | null = null;
+
+    /** Webull broker client instance */
+    private webullClient: WebullClient | null = null;
 
     /** Event listeners registry for the EventEmitter pattern */
     private eventListeners: Map<FloeEventType, Set<FloeEventListener<any>>> = new Map();
@@ -242,6 +248,28 @@ export class FloeClient {
                 await this.tradeStationClient.connect();
                 break;
 
+            case Broker.WEBULL:
+                this.webullClient = new WebullClient({
+                    authToken,
+                    verbose: this.verbose,
+                });
+
+                this.webullClient.on('tickerUpdate', (ticker: NormalizedTicker) => {
+                    this.emit('tickerUpdate', ticker);
+                });
+                this.webullClient.on('optionUpdate', (option: NormalizedOption) => {
+                    this.emit('optionUpdate', option);
+                });
+                this.webullClient.on('error', (error: Error) => {
+                    this.emit('error', error);
+                });
+                this.webullClient.on('disconnected', () => {
+                    this.emit('disconnected', { broker, reason: 'Webull market-data polling stopped' });
+                });
+
+                await this.webullClient.connect();
+                break;
+
             case Broker.SCHWAB:
                 // For Schwab, authToken is the OAuth access token
                 this.schwabClient = new SchwabClient({
@@ -337,6 +365,11 @@ export class FloeClient {
             this.ibkrClient = null;
         }
 
+        if (this.webullClient) {
+            this.webullClient.disconnect();
+            this.webullClient = null;
+        }
+
         const broker = this.currentBroker;
         this.currentBroker = null;
         this.currentSubscribedTickers = [];
@@ -374,6 +407,9 @@ export class FloeClient {
                 break;
             case Broker.TRADESTATION:
                 this.tradeStationClient?.subscribe(tickers);
+                break;
+            case Broker.WEBULL:
+                this.webullClient?.subscribe(tickers);
                 break;
             case Broker.SCHWAB:
                 this.schwabClient?.subscribe(tickers);
@@ -422,6 +458,9 @@ export class FloeClient {
             case Broker.TRADESTATION:
                 this.tradeStationClient?.subscribe(symbols);
                 break;
+            case Broker.WEBULL:
+                this.webullClient?.subscribe(symbols);
+                break;
             case Broker.SCHWAB:
                 this.schwabClient?.subscribe(symbols);
                 break;
@@ -460,6 +499,9 @@ export class FloeClient {
                 break;
             case Broker.TRADESTATION:
                 this.tradeStationClient?.unsubscribe(tickers);
+                break;
+            case Broker.WEBULL:
+                this.webullClient?.unsubscribe(tickers);
                 break;
             case Broker.SCHWAB:
                 this.schwabClient?.unsubscribe(tickers);
@@ -500,6 +542,9 @@ export class FloeClient {
             case Broker.TRADESTATION:
                 this.tradeStationClient?.unsubscribe(symbols);
                 break;
+            case Broker.WEBULL:
+                this.webullClient?.unsubscribe(symbols);
+                break;
             case Broker.SCHWAB:
                 this.schwabClient?.unsubscribe(symbols);
                 break;
@@ -537,6 +582,9 @@ export class FloeClient {
                 break;
             case Broker.TRADESTATION:
                 this.tradeStationClient?.unsubscribeFromAll();
+                break;
+            case Broker.WEBULL:
+                this.webullClient?.unsubscribeFromAll();
                 break;
             case Broker.SCHWAB:
                 this.schwabClient?.unsubscribeFromAll();
@@ -598,6 +646,9 @@ export class FloeClient {
                 // TradeStation provides open interest via stream, no separate fetch needed
                 // OI is automatically populated when streaming option chains
                 break;
+            case Broker.WEBULL:
+                await this.webullClient?.fetchOpenInterest(symbolsToFetch);
+                break;
             case Broker.SCHWAB:
                 await this.schwabClient?.fetchOpenInterest(symbolsToFetch);
                 break;
@@ -629,6 +680,8 @@ export class FloeClient {
                 return this.tastyTradeClient?.getOption(occSymbol);
             case Broker.TRADESTATION:
                 return this.tradeStationClient?.getOption(occSymbol);
+            case Broker.WEBULL:
+                return this.webullClient?.getOption(occSymbol);
             case Broker.SCHWAB:
                 return this.schwabClient?.getOption(occSymbol);
             case Broker.IBKR:
@@ -659,6 +712,8 @@ export class FloeClient {
                 return this.tastyTradeClient?.getAllOptions() ?? new Map();
             case Broker.TRADESTATION:
                 return this.tradeStationClient?.getAllOptions() ?? new Map();
+            case Broker.WEBULL:
+                return this.webullClient?.getAllOptions() ?? new Map();
             case Broker.SCHWAB:
                 return this.schwabClient?.getAllOptions() ?? new Map();
             case Broker.IBKR:

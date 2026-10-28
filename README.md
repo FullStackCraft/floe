@@ -42,6 +42,7 @@ Due to the overwhelming variety of how broker APIs structure their data (and how
 | Tradier (via WebSocket) | ✅           | ✅     | ✅                            | ✅                           |  ✅                         | ✅                   |
 | Tastytrade (via WebSocket - DXLink Streamer)               |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
 | TradeStation (via HTTP Streaming)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
+| Webull (via HTTP Snapshots)              |  ✅            |  ✅      |  ✅                             |  Not supported                 |  ✅                         | Not supported                   |
 | Schwab (via WebSocket)              |  ✅            |  ✅      |  ✅                             |  ✅                            |  ✅                         | Not yet tested                   |
 | Interactive Brokers (via WebSocket)              |  Not currently planned*            |  Not currently planned*      |  Not currently planned*                             |  Not currently planned*                            |  Not currently planned*                         | Not currently planned*                   |
 

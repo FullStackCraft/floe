@@ -193,13 +193,13 @@ describe('apiclient', () => {
               session_minute: 61,
               spot: 512.25,
               vix: 19.3,
-              surfaces: {
-                gamma: [{ strike: 510, value: 1200000 }],
-                vanna: [{ strike: 510, value: -80000 }],
-                charm: [{ strike: 510, value: 35000 }],
-                iv: [{ strike: 510, value: 0.24 }],
+              surfaces_jsonb: {
+                gamma: [{ strike: 510, call: 1200000, put: -900000, net: 300000 }],
+                vanna: [{ strike: 510, call: -80000, put: 20000, net: -60000 }],
+                charm: [{ strike: 510, call: 35000, put: -5000, net: 30000 }],
+                iv: [{ strike: 510, call: 0.24, put: 0.26, net: 0.25 }],
               },
-              metadata: {
+              metadata_jsonb: {
                 source: 'calc-engine',
                 version: 'v1',
               },
@@ -221,6 +221,15 @@ describe('apiclient', () => {
     expect(rows[0].session_minute).toBe(61);
     expect(rows[0].metadata.source).toBe('calc-engine');
     expect(rows[0].surfaces.gamma).toHaveLength(1);
+    expect(rows[0].surfaces.gamma[0]).toEqual({
+      strike: 510,
+      call: 1200000,
+      put: -900000,
+      net: 300000,
+      value: undefined,
+      x: undefined,
+      y: undefined,
+    });
     expect(rows[0].run_at).toBeInstanceOf(Date);
     expect(rows[0].minute_ts).toBeInstanceOf(Date);
   });

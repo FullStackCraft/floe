@@ -51,8 +51,14 @@ export interface HindsightEvent {
 
 export interface SurfacePoint {
   strike?: number;
+  call?: number;
+  put?: number;
+  net?: number;
+  /** @deprecated Legacy surface payload field. Prefer call, put, and net. */
   value?: number;
+  /** @deprecated Legacy chart-coordinate field. */
   x?: number;
+  /** @deprecated Legacy chart-coordinate field. */
   y?: number;
 }
 
@@ -87,6 +93,103 @@ export interface AMTEventsRow {
   session_id: string;
   events: Array<Record<string, unknown>>;
 }
+
+// --- AMT Event Categories & Codes ---
+
+/** Event categories for filtering AMT minute events. */
+export const AMTEventCategory = {
+  TPO: 'TPO',
+  Price: 'Price',
+  Volume: 'Volume',
+  Session: 'Session',
+  Overnight: 'Overnight',
+} as const;
+export type AMTEventCategory = (typeof AMTEventCategory)[keyof typeof AMTEventCategory];
+
+/** Typed event codes emitted by the AMT pipeline (66 codes across 5 categories). */
+export const AMTEventCode = {
+  // --- TPO Events ---
+  TPONewPrint: 'TPO_NEW_PRINT',
+  TPOPeriodFirstPrint: 'TPO_PERIOD_FIRST_PRINT',
+  TPOFirst3Wide: 'TPO_FIRST_3WIDE',
+  TPOFirst4Wide: 'TPO_FIRST_4WIDE',
+  TPOFirst5Wide: 'TPO_FIRST_5WIDE',
+  TPOSinglePrintCreated: 'TPO_SINGLE_PRINT_CREATED',
+  TPOSinglePrintFilled: 'TPO_SINGLE_PRINT_FILLED',
+  TPOPoorHigh: 'TPO_POOR_HIGH',
+  TPOPoorLow: 'TPO_POOR_LOW',
+  TPOExcessHigh: 'TPO_EXCESS_HIGH',
+  TPOExcessLow: 'TPO_EXCESS_LOW',
+
+  // --- Price Cross Events ---
+  PriceNHOD: 'PRICE_NHOD',
+  PriceNLOD: 'PRICE_NLOD',
+  PriceCrossHBUp: 'PRICE_CROSS_HB_UP',
+  PriceCrossHBDown: 'PRICE_CROSS_HB_DOWN',
+  PriceCrossTPOCUp: 'PRICE_CROSS_TPOC_UP',
+  PriceCrossTPOCDown: 'PRICE_CROSS_TPOC_DOWN',
+  PriceCrossVPOCUp: 'PRICE_CROSS_VPOC_UP',
+  PriceCrossVPOCDown: 'PRICE_CROSS_VPOC_DOWN',
+  PriceCrossVAHUp: 'PRICE_CROSS_VAH_UP',
+  PriceCrossVAHDown: 'PRICE_CROSS_VAH_DOWN',
+  PriceCrossVALUp: 'PRICE_CROSS_VAL_UP',
+  PriceCrossVALDown: 'PRICE_CROSS_VAL_DOWN',
+  PriceCrossORHighUp: 'PRICE_CROSS_OR_HIGH_UP',
+  PriceCrossORHighDown: 'PRICE_CROSS_OR_HIGH_DOWN',
+  PriceCrossORLowUp: 'PRICE_CROSS_OR_LOW_UP',
+  PriceCrossORLowDown: 'PRICE_CROSS_OR_LOW_DOWN',
+  PriceCrossIBHighUp: 'PRICE_CROSS_IB_HIGH_UP',
+  PriceCrossIBHighDown: 'PRICE_CROSS_IB_HIGH_DOWN',
+  PriceCrossIBLowUp: 'PRICE_CROSS_IB_LOW_UP',
+  PriceCrossIBLowDown: 'PRICE_CROSS_IB_LOW_DOWN',
+  PriceCrossPHODUp: 'PRICE_CROSS_PHOD_UP',
+  PriceCrossPHODDown: 'PRICE_CROSS_PHOD_DOWN',
+  PriceCrossPLODUp: 'PRICE_CROSS_PLOD_UP',
+  PriceCrossPLODDown: 'PRICE_CROSS_PLOD_DOWN',
+  PriceCrossPrevCloseUp: 'PRICE_CROSS_PREV_CLOSE_UP',
+  PriceCrossPrevCloseDown: 'PRICE_CROSS_PREV_CLOSE_DOWN',
+  PriceCrossPrevOpenUp: 'PRICE_CROSS_PREV_OPEN_UP',
+  PriceCrossPrevOpenDown: 'PRICE_CROSS_PREV_OPEN_DOWN',
+  PriceCrossONHUp: 'PRICE_CROSS_ONH_UP',
+  PriceCrossONHDown: 'PRICE_CROSS_ONH_DOWN',
+  PriceCrossONLUp: 'PRICE_CROSS_ONL_UP',
+  PriceCrossONLDown: 'PRICE_CROSS_ONL_DOWN',
+  PriceCrossVWAPUp: 'PRICE_CROSS_VWAP_UP',
+  PriceCrossVWAPDown: 'PRICE_CROSS_VWAP_DOWN',
+  PriceCrossVWAPSD1Up: 'PRICE_CROSS_VWAP_SD1_UP',
+  PriceCrossVWAPSD1Down: 'PRICE_CROSS_VWAP_SD1_DOWN',
+  PriceCrossVWAPSD2Up: 'PRICE_CROSS_VWAP_SD2_UP',
+  PriceCrossVWAPSD2Down: 'PRICE_CROSS_VWAP_SD2_DOWN',
+
+  // --- Volume Profile Events ---
+  VolVPOCShiftUp: 'VOL_VPOC_SHIFT_UP',
+  VolVPOCShiftDown: 'VOL_VPOC_SHIFT_DOWN',
+  VolVAMigrationUp: 'VOL_VA_MIGRATION_UP',
+  VolVAMigrationDown: 'VOL_VA_MIGRATION_DOWN',
+  VolVAExpanding: 'VOL_VA_EXPANDING',
+  VolVAContracting: 'VOL_VA_CONTRACTING',
+
+  // --- Session Structure Events ---
+  SessionPeriodTransition: 'SESSION_PERIOD_TRANSITION',
+  SessionOREstablished: 'SESSION_OR_ESTABLISHED',
+  SessionIBEstablished: 'SESSION_IB_ESTABLISHED',
+  SessionIBExtensionUp: 'SESSION_IB_EXTENSION_UP',
+  SessionIBExtensionDown: 'SESSION_IB_EXTENSION_DOWN',
+  SessionORExtensionUp: 'SESSION_OR_EXTENSION_UP',
+  SessionORExtensionDown: 'SESSION_OR_EXTENSION_DOWN',
+  SessionGapFill: 'SESSION_GAP_FILL',
+  SessionGlobexGapFill: 'SESSION_GLOBEX_GAP_FILL',
+  SessionHalfbackReached: 'SESSION_HALFBACK_REACHED',
+
+  // --- Overnight Events (futures only) ---
+  ONAsiaOpen: 'ON_ASIA_OPEN',
+  ONAsiaClose: 'ON_ASIA_CLOSE',
+  ONEUOpen: 'ON_EU_OPEN',
+  ONEUClose: 'ON_EU_CLOSE',
+  ONNewHigh: 'ON_NEW_HIGH',
+  ONNewLow: 'ON_NEW_LOW',
+} as const;
+export type AMTEventCode = (typeof AMTEventCode)[keyof typeof AMTEventCode];
 
 export interface OptionsScreenerRequest {
   strategy: string;
@@ -790,6 +893,9 @@ function normalizeSurfacePoints(value: unknown): SurfacePoint[] {
     const rawPoint = asRecord(point) ?? {};
     return {
       strike: rawPoint.strike !== undefined ? toNumber(rawPoint.strike) : undefined,
+      call: rawPoint.call !== undefined ? toNumber(rawPoint.call) : undefined,
+      put: rawPoint.put !== undefined ? toNumber(rawPoint.put) : undefined,
+      net: rawPoint.net !== undefined ? toNumber(rawPoint.net) : undefined,
       value: rawPoint.value !== undefined ? toNumber(rawPoint.value) : undefined,
       x: rawPoint.x !== undefined ? toNumber(rawPoint.x) : undefined,
       y: rawPoint.y !== undefined ? toNumber(rawPoint.y) : undefined,

@@ -126,6 +126,16 @@ export { FloeClient, Broker } from './client/FloeClient';
 export { TradierClient } from './client/brokers/TradierClient';
 export { TastyTradeClient } from './client/brokers/TastyTradeClient';
 export { TradeStationClient } from './client/brokers/TradeStationClient';
+export {
+  WebullClient,
+  createWebullAuthToken,
+  parseWebullAuthToken,
+} from './client/brokers/WebullClient';
+export type {
+  ParsedWebullAuthToken,
+  WebullAuthTokenConfig,
+  WebullClientOptions,
+} from './client/brokers/WebullClient';
 export type { AggressorSide, IntradayTrade } from './client/brokers/TradierClient';
 
 // Broker adapters

@@ -790,6 +790,7 @@ import {
 | Tradier | `Broker.TRADIER` | API Token |
 | TastyTrade | `Broker.TASTYTRADE` | Session Token |
 | TradeStation | `Broker.TRADESTATION` | OAuth Token |
+| Webull | `Broker.WEBULL` | OAuth Token + signed proxy |
 | Charles Schwab | `Broker.SCHWAB` | OAuth Token |
 | Interactive Brokers | `Broker.IBKR` | OAuth Token |
 
@@ -816,10 +817,24 @@ await client.fetchOpenInterest();
 client.disconnect();
 ```
 
+For Webull, keep request signing in your server-side proxy and pass the proxy configuration through the normal auth-token argument:
+
+```typescript
+import { Broker, createWebullAuthToken, FloeClient } from "@fullstackcraftllc/floe";
+
+const client = new FloeClient();
+const authToken = createWebullAuthToken({
+  accessToken: webullOAuthAccessToken,
+  proxyUrl: '/.netlify/functions/webullMarketData',
+});
+
+await client.connect(Broker.WEBULL, authToken);
+```
+
 ### Direct Broker Client Access
 
 ```typescript
-import { TradierClient, TastyTradeClient, TradeStationClient } from "@fullstackcraftllc/floe";
+import { TradierClient, TastyTradeClient, TradeStationClient, WebullClient } from "@fullstackcraftllc/floe";
 
 // Use broker clients directly for advanced scenarios
 const tradier = new TradierClient(token, { verbose: true });
