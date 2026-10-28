@@ -516,9 +516,17 @@ export abstract class BaseBrokerClient {
   ): NormalizedTicker {
     const existing = this.tickerCache.get(symbol);
 
+    // Indices (SPX, NDX, ...) have no two-sided quote; their spot comes from trades
+    let spot = existing?.spot ?? 0;
+    if (bid > 0 && ask > 0) {
+      spot = (bid + ask) / 2;
+    } else if (existing && existing.last > 0) {
+      spot = existing.last;
+    }
+
     const ticker: NormalizedTicker = {
       symbol,
-      spot: bid > 0 && ask > 0 ? (bid + ask) / 2 : existing?.spot ?? 0,
+      spot,
       bid,
       bidSize,
       ask,
@@ -546,9 +554,16 @@ export abstract class BaseBrokerClient {
   ): NormalizedTicker {
     const existing = this.tickerCache.get(symbol);
 
+    // Spot is the quote mid when there is a two-sided quote, otherwise the last trade
+    const hasTwoSidedQuote = !!existing && existing.bid > 0 && existing.ask > 0;
+    let spot = existing?.spot ?? 0;
+    if (!hasTwoSidedQuote && price > 0) {
+      spot = price;
+    }
+
     const ticker: NormalizedTicker = {
       symbol,
-      spot: existing?.spot ?? price,
+      spot,
       bid: existing?.bid ?? 0,
       bidSize: existing?.bidSize ?? 0,
       ask: existing?.ask ?? 0,

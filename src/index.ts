@@ -124,7 +124,13 @@ export type {
 // Client
 export { FloeClient, Broker } from './client/FloeClient';
 export { TradierClient } from './client/brokers/TradierClient';
-export { TastyTradeClient } from './client/brokers/TastyTradeClient';
+export { TastyTradeClient, TastyTradeApiError } from './client/brokers/TastyTradeClient';
+export type {
+  TastyTradeClientOptions,
+  TastyTradeNestedOptionChain,
+  TastyTradeNestedExpiration,
+  TastyTradeNestedStrike,
+} from './client/brokers/TastyTradeClient';
 export { TradeStationClient } from './client/brokers/TradeStationClient';
 export {
   WebullClient,

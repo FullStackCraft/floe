@@ -199,7 +199,8 @@ export class FloeClient {
                 break;
 
             case Broker.TASTYTRADE:
-                // For TastyTrade, authToken is the session token
+                // For TastyTrade, authToken is the OAuth access token (15 minute lifetime;
+                // keep it current with updateAuthToken)
                 this.tastyTradeClient = new TastyTradeClient({
                     sessionToken: authToken,
                     verbose: this.verbose,
@@ -221,6 +222,11 @@ export class FloeClient {
 
                 // Connect to the streaming API
                 await this.tastyTradeClient.connect();
+
+                // The initial connect is announced below; this forwards reconnects
+                this.tastyTradeClient?.on('connected', () => {
+                    this.emit('connected', { broker });
+                });
                 break;
 
             case Broker.TRADESTATION:
@@ -377,6 +383,35 @@ export class FloeClient {
 
         if (broker) {
             this.emit('disconnected', { broker, reason: 'Client disconnect' });
+        }
+    }
+
+    /**
+     * Replaces the auth token of the active broker connection without dropping the stream.
+     *
+     * @param authToken - The new access token
+     *
+     * @remarks
+     * For brokers whose access tokens expire mid-session. TastyTrade tokens last 15 minutes:
+     * the open stream keeps running, but reconnects need a current token. TradeStation uses
+     * it for its REST calls. Other brokers ignore it.
+     *
+     * @example
+     * ```typescript
+     * const newToken = await refreshMyToken();
+     * client.updateAuthToken(newToken);
+     * ```
+     */
+    updateAuthToken(authToken: string): void {
+        switch (this.currentBroker) {
+            case Broker.TASTYTRADE:
+                this.tastyTradeClient?.updateAuthToken(authToken);
+                break;
+            case Broker.TRADESTATION:
+                this.tradeStationClient?.updateAccessToken(authToken);
+                break;
+            default:
+                break;
         }
     }
 

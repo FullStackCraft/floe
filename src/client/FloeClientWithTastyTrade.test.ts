@@ -40,8 +40,20 @@ const USE_SANDBOX = process.env.TASTYTRADE_SANDBOX === 'true';
 
 // Test parameters
 const TEST_SYMBOL = 'SPY';
-const TEST_EXPIRATION = '2025-12-20'; // Use a valid future expiration (weekly)
-const TEST_SPOT_PRICE = 600; // Approximate current SPY price - adjust as needed
+
+/** Next Friday (SPY weekly), as YYYY-MM-DD in local time */
+function nextFridayExpiration(from: Date = new Date()): string {
+  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const daysUntilFriday = (5 - date.getDay() + 7) % 7 || 7;
+  date.setDate(date.getDate() + daysUntilFriday);
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${mm}-${dd}`;
+}
+
+const TEST_EXPIRATION = process.env.TASTYTRADE_TEST_EXPIRATION || nextFridayExpiration();
+// Replaced with the live SPY price in the file-level beforeAll below when credentials are present
+let TEST_SPOT_PRICE = Number(process.env.TASTYTRADE_TEST_SPOT) || 600;
 const STRIKES_ABOVE = 10;
 const STRIKES_BELOW = 10;
 const STRIKE_INCREMENT = 1;
@@ -140,6 +152,39 @@ function isMarketOpen(): boolean {
 const marketOpen = isMarketOpen();
 console.log(`\n📊 Market is currently: ${marketOpen ? '🟢 OPEN' : '🔴 CLOSED'}`);
 console.log(`🔧 Using ${USE_SANDBOX ? 'SANDBOX' : 'PRODUCTION'} environment\n`);
+
+/**
+ * Reads the live spot for a symbol so generated strikes sit around the money.
+ */
+async function getLiveSpot(symbol: string, timeoutMs = 15000): Promise<number | null> {
+  const spotClient = new FloeClient();
+  try {
+    await spotClient.connect(Broker.TASTYTRADE, await getSessionToken());
+    return await new Promise<number | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), timeoutMs);
+      spotClient.on('tickerUpdate', (ticker: NormalizedTicker) => {
+        if (ticker.symbol === symbol && ticker.spot > 0) {
+          clearTimeout(timer);
+          resolve(ticker.spot);
+        }
+      });
+      spotClient.subscribeToTickers([symbol]);
+    });
+  } catch {
+    return null;
+  } finally {
+    spotClient.disconnect();
+  }
+}
+
+beforeAll(async () => {
+  if (shouldSkip || process.env.TASTYTRADE_TEST_SPOT) return;
+  const spot = await getLiveSpot(TEST_SYMBOL);
+  if (spot) {
+    TEST_SPOT_PRICE = Math.round(spot);
+  }
+  console.log(`🎯 ${TEST_SYMBOL} options around ${TEST_SPOT_PRICE}, expiring ${TEST_EXPIRATION}`);
+}, 30000);
 
 // ============================================================================
 // TESTS
@@ -512,8 +557,8 @@ describe('FloeClient with TastyTrade Integration', () => {
     }, STREAM_TIMEOUT + 15000);
   });
 
-  describe('Open Interest via REST API', () => {
-    it('should fetch open interest for subscribed options', async () => {
+  describe('Open Interest via DxLink Summary', () => {
+    it('should populate open interest for subscribed options', async () => {
       if (shouldSkip) {
         console.log('Skipping test: No TastyTrade credentials provided');
         return;
@@ -532,22 +577,28 @@ describe('FloeClient with TastyTrade Integration', () => {
       );
 
       console.log('='.repeat(60));
-      console.log('OPEN INTEREST TEST (TastyTrade REST API)');
+      console.log('OPEN INTEREST TEST (TastyTrade DxLink Summary events)');
       console.log('='.repeat(60));
-      console.log(`Fetching open interest for ${optionSymbols.length} options`);
+      console.log(`Waiting for open interest on ${optionSymbols.length} options`);
 
       try {
         await client.connect(Broker.TASTYTRADE, sessionToken);
       } catch (err) {
-        if (isAuthError(err)) { warnAuthSkip('should fetch open interest for subscribed options'); return; }
+        if (isAuthError(err)) { warnAuthSkip('should populate open interest for subscribed options'); return; }
         throw err;
       }
 
-      // Subscribe to options
+      // Subscribe to options; Summary (with openInterest) is part of every option subscription
       client.subscribeToOptions(optionSymbols);
-
-      // Act - Fetch open interest via REST API
       await client.fetchOpenInterest();
+
+      // Act - Summary snapshots arrive shortly after subscribing, even outside market hours
+      const deadline = Date.now() + 10000;
+      const countWithOI = () =>
+        Array.from(client.getAllOptions().values()).filter((option) => option.openInterest > 0).length;
+      while (Date.now() < deadline && countWithOI() < optionSymbols.length / 2) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
 
       // Assert - Check what data we received
       const allOptions = client.getAllOptions();
@@ -576,21 +627,67 @@ describe('FloeClient with TastyTrade Integration', () => {
       console.log(`Options with Bid/Ask: ${optionsWithBidAsk}`);
       console.log('='.repeat(60));
 
-      // Verify we received data (may be 0 if option chain endpoint returns different format)
-      // TastyTrade option chain API may need adjustment
-      if (allOptions.size > 0) {
-        // Verify the data structure is correct
-        const sampleOption = allOptions.values().next().value;
-        expect(sampleOption).toBeDefined();
-        if (sampleOption) {
-          expect(sampleOption.underlying).toBe(TEST_SYMBOL);
-          expect(sampleOption.strike).toBeGreaterThan(0);
-          expect(['call', 'put']).toContain(sampleOption.optionType);
-        }
-      } else {
-        console.log('⚠️  No options fetched - TastyTrade option chain API may need different endpoint');
+      // Near-the-money weekly strikes always carry some open interest
+      expect(allOptions.size).toBeGreaterThan(0);
+      expect(optionsWithOI).toBeGreaterThan(0);
+
+      const sampleOption = allOptions.values().next().value;
+      expect(sampleOption).toBeDefined();
+      if (sampleOption) {
+        expect(sampleOption.underlying).toBe(TEST_SYMBOL);
+        expect(sampleOption.strike).toBeGreaterThan(0);
+        expect(['call', 'put']).toContain(sampleOption.optionType);
       }
     }, 30000);
+  });
+
+  describe('Index options (SPX / SPXW)', () => {
+    it('should stream SPX spot from trades and SPXW open interest', async () => {
+      if (shouldSkip) {
+        console.log('Skipping test: No TastyTrade credentials provided');
+        return;
+      }
+
+      try {
+        await client.connect(Broker.TASTYTRADE, sessionToken);
+      } catch (err) {
+        if (isAuthError(err)) { warnAuthSkip('should stream SPX spot from trades and SPXW open interest'); return; }
+        throw err;
+      }
+
+      // SPX has no two-sided quote, so its spot has to come from trades
+      const spxSpot = await new Promise<number>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('No SPX spot within 15s')), 15000);
+        client.on('tickerUpdate', (ticker: NormalizedTicker) => {
+          if (ticker.symbol === 'SPX' && ticker.spot > 0) {
+            clearTimeout(timer);
+            resolve(ticker.spot);
+          }
+        });
+        client.subscribeToTickers(['SPX']);
+      });
+      console.log(`SPX spot: ${spxSpot}`);
+      expect(spxSpot).toBeGreaterThan(1000);
+
+      const optionSymbols = generateOCCSymbolsAroundSpot(
+        'SPXW',
+        TEST_EXPIRATION,
+        Math.round(spxSpot / 5) * 5,
+        { strikesAbove: 5, strikesBelow: 5, strikeIncrementInDollars: 5 }
+      );
+      client.subscribeToOptions(optionSymbols);
+
+      const deadline = Date.now() + 10000;
+      const withOI = () =>
+        Array.from(client.getAllOptions().values()).filter((option) => option.openInterest > 0);
+      while (Date.now() < deadline && withOI().length < optionSymbols.length / 2) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      console.log(`SPXW options with OI > 0: ${withOI().length}/${optionSymbols.length}`);
+      expect(withOI().length).toBeGreaterThan(0);
+      expect(withOI()[0].underlying).toBe('SPXW');
+    }, 40000);
   });
 
   describe('Greeks via DxLink Streaming', () => {
