@@ -788,7 +788,7 @@ import {
 | Broker | Enum Value | Authentication |
 |--------|------------|----------------|
 | Tradier | `Broker.TRADIER` | API Token |
-| TastyTrade | `Broker.TASTYTRADE` | Session Token |
+| TastyTrade | `Broker.TASTYTRADE` | OAuth access token (15 min; refresh and pass to `updateAuthToken`) |
 | TradeStation | `Broker.TRADESTATION` | OAuth Token |
 | Webull | `Broker.WEBULL` | OAuth Token + signed proxy |
 | Charles Schwab | `Broker.SCHWAB` | OAuth Token |
@@ -816,6 +816,14 @@ await client.fetchOpenInterest();
 
 client.disconnect();
 ```
+
+For TastyTrade, the auth token is an OAuth access token, and those expire after 15 minutes. An open stream keeps running on its DxLink quote token, but a reconnect needs a current access token, so refresh it before it expires and hand it over:
+
+```typescript
+client.updateAuthToken(newAccessToken);
+```
+
+A failed TastyTrade `connect()` rejects with a `TastyTradeApiError` that carries the HTTP `status` and TastyTrade's error `code` (for example `quote_streamer.customer_not_found_error` for an account that isn't fully opened). Open interest arrives on DxLink `Summary` events, so `fetchOpenInterest()` resolves immediately for TastyTrade.
 
 For Webull, keep request signing in your server-side proxy and pass the proxy configuration through the normal auth-token argument:
 
