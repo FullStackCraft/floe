@@ -210,6 +210,15 @@ export class TradierClient extends BaseBrokerClient {
   /** Connection state */
   private connected: boolean = false;
 
+  /**
+   * Bumped by disconnect(). A connect or reconnect that started before the bump
+   * stands down instead of opening a socket nobody is listening to.
+   */
+  private disconnectGeneration: number = 0;
+
+  /** Rejects the connect() that is waiting for the socket to open */
+  private rejectPendingConnect: ((error: Error) => void) | null = null;
+
   /** Tradier API base URL */
   private readonly apiBaseUrl: string = 'https://api.tradier.com/v1';
 
@@ -237,8 +246,13 @@ export class TradierClient extends BaseBrokerClient {
    * @throws {Error} If session creation or WebSocket connection fails
    */
   async connect(): Promise<void> {
+    const generation = this.disconnectGeneration;
+
     // Create streaming session
     const session = await this.createStreamSession();
+    if (this.disconnectedSince(generation)) {
+      throw new Error('Tradier connection closed before it was established');
+    }
     if (!session) {
       throw new Error('Failed to create Tradier streaming session');
     }
@@ -251,15 +265,24 @@ export class TradierClient extends BaseBrokerClient {
 
   /**
    * Disconnects from the Tradier streaming API.
+   *
+   * @remarks
+   * Safe to call mid-connect: a pending connect() rejects, no socket is opened
+   * afterwards, and the client emits no 'error' and makes no reconnect attempt.
    */
   disconnect(): void {
-    if (this.ws) {
-      this.ws.close(1000, 'Client disconnect');
-      this.ws = null;
-    }
-    this.connected = false;
+    this.disconnectGeneration++;
+    const hadSocket = this.ws !== null;
+
+    this.failPendingConnect(new Error('Tradier connection closed before it was established'));
+    this.teardownSocket('Client disconnect');
+
     this.streamSession = null;
     this.subscribedSymbols.clear();
+
+    if (hadSocket) {
+      this.emit('disconnected', { reason: 'Client disconnect' });
+    }
   }
 
   /**
@@ -505,6 +528,8 @@ export class TradierClient extends BaseBrokerClient {
    * Creates a streaming session with Tradier API.
    */
   private async createStreamSession(): Promise<TradierStreamSession | null> {
+    const generation = this.disconnectGeneration;
+
     try {
       const response = await fetch(`${this.apiBaseUrl}/markets/events/session`, {
         method: 'POST',
@@ -515,14 +540,18 @@ export class TradierClient extends BaseBrokerClient {
       });
 
       if (!response.ok) {
-        this.emit('error', new Error(`Failed to create stream session: ${response.statusText}`));
+        if (!this.disconnectedSince(generation)) {
+          this.emit('error', new Error(`Failed to create stream session: ${response.statusText}`));
+        }
         return null;
       }
 
       const data = await response.json() as TradierStreamResponse;
       return data.stream;
     } catch (error) {
-      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      if (!this.disconnectedSince(generation)) {
+        this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      }
       return null;
     }
   }
@@ -531,10 +560,19 @@ export class TradierClient extends BaseBrokerClient {
    * Connects to the Tradier WebSocket.
    */
   private connectWebSocket(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(this.wsUrl);
+    // Drop any previous socket quietly; its handlers are detached
+    this.failPendingConnect(new Error('Superseded by a new connection'));
+    this.teardownSocket('Reconnecting');
 
-      this.ws.onopen = () => {
+    return new Promise((resolve, reject) => {
+      this.rejectPendingConnect = reject;
+
+      const ws = new WebSocket(this.wsUrl);
+      this.ws = ws;
+
+      ws.onopen = () => {
+        if (this.ws !== ws) return;
+        this.rejectPendingConnect = null;
         this.connected = true;
         this.reconnectAttempts = 0;
         if (this.verbose) {
@@ -548,18 +586,22 @@ export class TradierClient extends BaseBrokerClient {
             sessionid: this.streamSession.sessionid,
             symbols: Array.from(this.subscribedSymbols),
           };
-          this.ws!.send(JSON.stringify(payload));
+          ws.send(JSON.stringify(payload));
         }
 
         resolve();
       };
 
-      this.ws.onmessage = (event) => {
+      ws.onmessage = (event) => {
+        if (this.ws !== ws) return;
         this.handleMessage(event.data);
       };
 
-      this.ws.onclose = (event) => {
+      ws.onclose = (event) => {
+        if (this.ws !== ws) return;
+        this.ws = null;
         this.connected = false;
+        this.failPendingConnect(new Error(`Tradier connection closed before it was established (code ${event.code})`));
         this.emit('disconnected', { reason: event.reason });
 
         // Attempt reconnection if not a clean close
@@ -568,17 +610,66 @@ export class TradierClient extends BaseBrokerClient {
         }
       };
 
-      this.ws.onerror = (error) => {
+      ws.onerror = () => {
+        if (this.ws !== ws) return;
         this.emit('error', new Error('WebSocket error'));
-        reject(error);
+        this.failPendingConnect(new Error('WebSocket error'));
       };
     });
+  }
+
+  /**
+   * Closes the current socket without firing its handlers.
+   *
+   * @remarks
+   * Closing a socket that is still connecting makes the browser fire `error`
+   * and then `close` with code 1006. With the handlers attached, that read as a
+   * failed connection: an 'error' event and a reconnect on a client that had
+   * been told to disconnect.
+   */
+  private teardownSocket(reason: string): void {
+    const ws = this.ws;
+    this.ws = null;
+    this.connected = false;
+
+    if (!ws) return;
+
+    ws.onopen = null;
+    ws.onmessage = null;
+    ws.onerror = null;
+    ws.onclose = null;
+
+    if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.close(1000, reason);
+      } catch {
+        // Already closing
+      }
+    }
+  }
+
+  /**
+   * Rejects the pending connect, if any.
+   */
+  private failPendingConnect(error: Error): void {
+    const reject = this.rejectPendingConnect;
+    this.rejectPendingConnect = null;
+    reject?.(error);
+  }
+
+  /**
+   * Whether disconnect() has been called since `generation` was read.
+   */
+  private disconnectedSince(generation: number): boolean {
+    return generation !== this.disconnectGeneration;
   }
 
   /**
    * Attempts to reconnect with exponential backoff.
    */
   private async attemptReconnect(): Promise<void> {
+    const generation = this.disconnectGeneration;
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.emit('error', new Error('Max reconnection attempts reached'));
       return;
@@ -592,6 +683,7 @@ export class TradierClient extends BaseBrokerClient {
     }
 
     await this.sleep(delay);
+    if (this.disconnectedSince(generation)) return;
 
     try {
       await this.connect();
